@@ -94,10 +94,33 @@ export class MenuScene extends Phaser.Scene {
     });
     this.trainingMenuGroup.add(backToMainBtn);
 
-    // Informacje o graczu na dole
+    // Informacje o graczu na dole (High Score i Poziom Kocha)
     const highScore = this.profile.highScore || 0;
-    this.add.text(width / 2, height - 50, `HIGH SCORE: ${highScore}  |  CAMPAIGN KOCH LEVEL: ${this.profile.kochLevel || 2}`, {
+    this.add.text(width / 2, height - 70, `HIGH SCORE: ${highScore}  |  CAMPAIGN KOCH LEVEL: ${this.profile.kochLevel || 2}`, {
       fontFamily: 'monospace', fontSize: '16px', fill: '#00aa00'
+    }).setOrigin(0.5, 0.5);
+
+    // --- NOWOŚĆ: WYŚWIETLANIE RANGI, ZNAKÓW ORAZ MINUT ---
+    const totalHits = this.profile.lifetimeHits || 0;
+    const totalMinutes = Math.floor((this.profile.totalPlayTimeMs || 0) / 60000);
+
+    let rank = "REKRUT";
+    if (totalHits >= 100) rank = "SZEREGOWY";
+    if (totalHits >= 200) rank = "KAPRAL";
+    if (totalHits >= 500) rank = "SIERŻANT";
+    if (totalHits >= 1000) rank = "PORUCZNIK";
+    if (totalHits >= 1500) rank = "KAPITAN";
+    if (totalHits >= 2000) rank = "MAJOR";
+    if (totalHits >= 3000) rank = "PUŁKOWNIK";
+    
+    if (totalHits >= 4000) {
+      const rankLevel = Math.floor((totalHits - 3000) / 1000);
+      const eliteRanks = ['GENERAŁ', 'MARSZAŁEK', 'WETERAN CW', 'MISTRZ KLUCZA', 'LEGENDA ETERU', 'BÓG TELEGRAFU'];
+      rank = eliteRanks[Math.min(rankLevel - 1, eliteRanks.length - 1)];
+    }
+
+    this.add.text(width / 2, height - 35, `[ RANGA: ${rank} | ZNAKI: ${totalHits} | WYLATANE: ${totalMinutes} MIN ]`, {
+      fontFamily: 'monospace', fontSize: '15px', fill: '#00ff00', backgroundColor: '#001100', padding: { x: 8, y: 4 }
     }).setOrigin(0.5, 0.5);
   }
 

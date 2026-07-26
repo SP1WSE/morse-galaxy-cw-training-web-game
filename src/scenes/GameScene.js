@@ -31,6 +31,8 @@ export class GameScene extends Phaser.Scene {
     // Odbieramy tryb oraz opcjonalny poziom z menu treningowego
     this.gameMode = data && data.mode ? data.mode : 'campaign';
     this.selectedTrainingLevel = data && data.level ? data.level : 5;
+    // --- NOWE: Zapisanie czasu startu sesji ---
+    this.sessionStartTime = Date.now();
   }
 
   create() {
@@ -410,6 +412,13 @@ export class GameScene extends Phaser.Scene {
     if (this.score > (this.playerProfile.highScore || 0)) {
       this.playerProfile.highScore = this.score;
     }
+    
+ // --- NOWE: Obliczanie i zapisywanie czasu gry ---
+    const now = Date.now();
+    const playedMs = now - this.sessionStartTime;
+    this.playerProfile.totalPlayTimeMs = (this.playerProfile.totalPlayTimeMs || 0) + playedMs;
+    this.sessionStartTime = now; // Resetujemy stoper, żeby nie naliczyć podwójnie
+    
     
     SaveManager.save(this.playerProfile);
   }
