@@ -27,3 +27,5 @@ pnpm-debug.log*
 .vscode/
 .DS_Store
 Thumbs.db
+index.html
+sw.js
