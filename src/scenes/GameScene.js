@@ -18,6 +18,10 @@ export class GameScene extends Phaser.Scene {
     this.cwEngine = new CWEngine();
     this.cwEngine.resumeContext();
     
+    // Kontekst audio dla efektów dźwiękowych (SFX)
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    this.sfxCtx = new AudioContext();
+    
     this.score = 0;
     this.lives = 3;
     this.activeEnemies = [];
@@ -107,7 +111,6 @@ export class GameScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '20px', fill: '#555555', fontStyle: 'bold'
     }).setOrigin(0.5, 0);
 
-    // Zmieniona instrukcja na dole ekranu
     this.add.text(20, height - 30, '[ESC] PAUSE / STATS', {
       fontFamily: 'monospace', fontSize: '16px', fill: '#00aa00'
     });
@@ -165,6 +168,43 @@ export class GameScene extends Phaser.Scene {
 
     this.scheduleNextSpawn();
     this.setupMobileKeyboardInput();
+  }
+
+  // --- EFEKTY DŹWIĘKOWE (SFX) ---
+  playExplosionSound() {
+    if (!this.sfxCtx) return;
+    if (this.sfxCtx.state === 'suspended') this.sfxCtx.resume();
+
+    // Generowanie białego szumu (white noise)
+    const bufferSize = this.sfxCtx.sampleRate * 0.3; // Długość: 0.3 sekundy
+    const buffer = this.sfxCtx.createBuffer(1, bufferSize, this.sfxCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1; // Szum od -1 do 1
+    }
+
+    const noiseSource = this.sfxCtx.createBufferSource();
+    noiseSource.buffer = buffer;
+
+    // Filtr dolnoprzepustowy - obcina wysokie częstotliwości, dając "głuchy" wybuch
+    const filter = this.sfxCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1200, this.sfxCtx.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(100, this.sfxCtx.currentTime + 0.2);
+
+    // Głośność gasnąca w czasie
+    const gainNode = this.sfxCtx.createGain();
+    gainNode.gain.setValueAtTime(0.3, this.sfxCtx.currentTime); // głośność początkowa (30%)
+    gainNode.gain.exponentialRampToValueAtTime(0.01, this.sfxCtx.currentTime + 0.3);
+
+    // Łączenie węzłów
+    noiseSource.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(this.sfxCtx.destination);
+
+    // Odpalenie dźwięku
+    noiseSource.start();
   }
 
   // --- LOGIKA PAUZY ---
@@ -334,7 +374,9 @@ export class GameScene extends Phaser.Scene {
       const reactionTime = Date.now() - targetEnemy.spawnTime;
 
       if (key === targetEnemy.targetCharacter) {
+        // SUKCES - Trafienie!
         this.updateCombo(true); 
+        this.playExplosionSound(); // Odtwórz dźwięk zniszczenia statku
         
         this.score += (100 * this.multiplier);
         this.sessionStats.totalHits += 1; 
@@ -362,6 +404,7 @@ export class GameScene extends Phaser.Scene {
 
         if (this.activeEnemies.length > 0) this.playOldestEnemyCode();
       } else {
+        // PUDŁO
         this.cameras.main.shake(100, 0.005);
         this.sessionStats.totalErrors += 1;
         
