@@ -1,0 +1,10 @@
+/**
+ * @module KochSequence
+ * @description Definiuje zoptymalizowaną kolejność wprowadzania znaków w metodzie Kocha.
+ */
+export const KOCH_SEQUENCE = [
+  'K', 'M', 'R', 'S', 'U', 'A', 'P', 'T', 'L', 'O',
+  'W', 'I', '.', 'N', 'J', 'E', 'F', '0', 'Y', 'V',
+  'G', '5', '/', 'Q', '9', 'Z', 'H', '3', '8', 'B',
+  '?', '4', '2', '7', 'C', '1', 'D', '6', 'X'
+];

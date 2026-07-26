@@ -1,0 +1,29 @@
+# Zależności (to ten folder zawieszał VS Code!)
+node_modules/
+/.pnp
+.pnp.js
+
+# Wyniki budowania aplikacji (Build)
+/dist
+/build
+/out
+.next/
+.nuxt/
+
+# Pliki ze zmiennymi środowiskowymi i hasłami (bardzo ważne!)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logi błędów
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Konfiguracja edytora i pliki systemowe
+.vscode/
+.DS_Store
+Thumbs.db
