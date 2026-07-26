@@ -24,6 +24,10 @@ export class GameScene extends Phaser.Scene {
     this.isPlayingAudio = false;
     this.sessionStats = { totalHits: 0 };
     
+    // Zmienne systemu COMBO
+    this.comboCount = 0;
+    this.multiplier = 1;
+    
     // Odbieramy tryb oraz opcjonalny poziom z menu treningowego
     this.gameMode = data && data.mode ? data.mode : 'campaign';
     this.selectedTrainingLevel = data && data.level ? data.level : 5;
@@ -89,6 +93,11 @@ export class GameScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '24px', fill: '#00ff00'
     }).setOrigin(0.5, 0);
 
+    // --- HUD: Tekst systemu Combo (tylko mnożnik) ---
+    this.comboText = this.add.text(width / 2, 55, `COMBO: x1`, {
+      fontFamily: 'monospace', fontSize: '20px', fill: '#555555', fontStyle: 'bold'
+    }).setOrigin(0.5, 0);
+
     this.add.text(20, height - 30, '[ESC] ABORT MISSION', {
       fontFamily: 'monospace', fontSize: '16px', fill: '#00aa00'
     });
@@ -111,9 +120,55 @@ export class GameScene extends Phaser.Scene {
 
     globalEventBus.on('ACHIEVEMENT_UNLOCKED', this.showAchievementNotification, this);
 
-    // Uruchomienie spawnowania oraz mechanizmu wysuwania klawiatury mobilnej
     this.scheduleNextSpawn();
     this.setupMobileKeyboardInput();
+  }
+
+  // --- LOGIKA COMBO ---
+  updateCombo(isHit) {
+    if (isHit) {
+      this.comboCount += 1;
+      let newMultiplier = 1;
+      let color = '#555555'; // Szary (domyślny)
+
+      // Progi mnożnika i kolory
+      if (this.comboCount >= 20) { newMultiplier = 4; color = '#ff00ff'; } // Magenta
+      else if (this.comboCount >= 10) { newMultiplier = 3; color = '#ff8800'; } // Pomarańczowy
+      else if (this.comboCount >= 5) { newMultiplier = 2; color = '#ffff00'; } // Żółty
+
+      // Jeśli mnożnik właśnie wzrósł, odpal animację
+      if (newMultiplier > this.multiplier) {
+        this.tweens.add({
+          targets: this.comboText,
+          scaleX: 1.5, scaleY: 1.5,
+          duration: 150,
+          yoyo: true,
+          ease: 'Power2'
+        });
+      }
+
+      this.multiplier = newMultiplier;
+      this.comboText.setText(`COMBO: x${this.multiplier}`);
+      
+      // Kolorujemy tekst
+      this.comboText.setFill(this.multiplier > 1 ? color : '#aaaaaa');
+      
+    } else {
+      // Pomyłka - resetujemy Combo
+      this.comboCount = 0;
+      this.multiplier = 1;
+      this.comboText.setText(`COMBO: x1`);
+      this.comboText.setFill('#555555'); 
+      
+      // Animacja potrząśnięcia licznikiem przy utracie Combo
+      this.tweens.add({
+        targets: this.comboText,
+        x: this.comboText.x + 10,
+        duration: 50,
+        yoyo: true,
+        repeat: 3
+      });
+    }
   }
 
   update() {
@@ -142,7 +197,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   scheduleNextSpawn() {
-    // Stały, stabilny czas między statkami (brak przyspieszania)
     const currentDelay = 2000; 
     
     this.spawnTimer = this.time.delayedCall(currentDelay, () => {
@@ -168,7 +222,6 @@ export class GameScene extends Phaser.Scene {
     
     this.enemyGroup.add(enemy);
     
-    // Stała prędkość pobrana z ustawień menu
     const fixedSpeed = Number(this.playerProfile.settings.baseGameSpeed) || 100;
     enemy.body.setVelocityY(fixedSpeed); 
     
@@ -202,7 +255,11 @@ export class GameScene extends Phaser.Scene {
       const reactionTime = Date.now() - targetEnemy.spawnTime;
 
       if (key === targetEnemy.targetCharacter) {
-        this.score += 100;
+        // --- SUKCES ---
+        this.updateCombo(true); 
+        
+        this.score += (100 * this.multiplier);
+        
         this.sessionStats.totalHits += 1; 
         this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
         
@@ -228,7 +285,12 @@ export class GameScene extends Phaser.Scene {
 
         if (this.activeEnemies.length > 0) this.playOldestEnemyCode();
       } else {
+        // --- BŁĄD ---
         this.cameras.main.shake(100, 0.005);
+        this.sessionStats.totalErrors = (this.sessionStats.totalErrors || 0) + 1;
+        
+        this.updateCombo(false);
+
         const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
         if (!isTraining) {
           this.ai.recordAttempt(targetEnemy.targetCharacter, reactionTime, false);
@@ -367,11 +429,12 @@ export class GameScene extends Phaser.Scene {
     this.livesText.setText(`LIVES: ${this.lives}`);
     this.cameras.main.shake(200, 0.01);
     this.cameras.main.flash(200, 255, 0, 0);
+    
+    this.updateCombo(false);
 
     if (this.lives <= 0) {
       this.gameOver();
     } else {
-      // Czyszczenie planszy z obecnych statków po utracie życia
       for (const enemy of this.activeEnemies) {
         if (enemy && enemy.destroy) {
           enemy.destroy();
@@ -379,7 +442,6 @@ export class GameScene extends Phaser.Scene {
       }
       this.activeEnemies = [];
       
-      // Reset flagi audio oraz timera spawnu i natychmiastowe wypuszczenie nowego statku
       this.isPlayingAudio = false;
 
       if (this.spawnTimer) {
