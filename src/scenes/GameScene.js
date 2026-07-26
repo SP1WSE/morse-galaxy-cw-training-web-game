@@ -22,17 +22,21 @@ export class GameScene extends Phaser.Scene {
     this.lives = 3;
     this.activeEnemies = [];
     this.isPlayingAudio = false;
-    this.sessionStats = { totalHits: 0 };
     
-    // Zmienne systemu COMBO
+    this.sessionStats = { totalHits: 0, totalErrors: 0 };
+    
+    // Zmienne systemu COMBO i podsumowania
     this.comboCount = 0;
     this.multiplier = 1;
+    this.sessionMistakes = 0; // Licznik pomyłek (resetów mnożnika)
     
-    // Odbieramy tryb oraz opcjonalny poziom z menu treningowego
     this.gameMode = data && data.mode ? data.mode : 'campaign';
     this.selectedTrainingLevel = data && data.level ? data.level : 5;
-    // --- NOWE: Zapisanie czasu startu sesji ---
-    this.sessionStartTime = Date.now();
+    
+    // Zegar sesji
+    const now = Date.now();
+    this.sessionStartTime = now; // Stały czas startu (do podsumowania)
+    this.lastSaveTime = now;     // Czas ostatniego zapisu (do bazy danych)
   }
 
   create() {
@@ -131,14 +135,12 @@ export class GameScene extends Phaser.Scene {
     if (isHit) {
       this.comboCount += 1;
       let newMultiplier = 1;
-      let color = '#555555'; // Szary (domyślny)
+      let color = '#555555'; 
 
-      // Progi mnożnika i kolory
-      if (this.comboCount >= 20) { newMultiplier = 4; color = '#ff00ff'; } // Magenta
-      else if (this.comboCount >= 10) { newMultiplier = 3; color = '#ff8800'; } // Pomarańczowy
-      else if (this.comboCount >= 5) { newMultiplier = 2; color = '#ffff00'; } // Żółty
+      if (this.comboCount >= 20) { newMultiplier = 4; color = '#ff00ff'; } 
+      else if (this.comboCount >= 10) { newMultiplier = 3; color = '#ff8800'; } 
+      else if (this.comboCount >= 5) { newMultiplier = 2; color = '#ffff00'; } 
 
-      // Jeśli mnożnik właśnie wzrósł, odpal animację
       if (newMultiplier > this.multiplier) {
         this.tweens.add({
           targets: this.comboText,
@@ -151,18 +153,17 @@ export class GameScene extends Phaser.Scene {
 
       this.multiplier = newMultiplier;
       this.comboText.setText(`COMBO: x${this.multiplier}`);
-      
-      // Kolorujemy tekst
       this.comboText.setFill(this.multiplier > 1 ? color : '#aaaaaa');
       
     } else {
-      // Pomyłka - resetujemy Combo
+      // BŁĄD - Zliczamy pomyłkę przed podsumowaniem
+      this.sessionMistakes += 1;
+      
       this.comboCount = 0;
       this.multiplier = 1;
       this.comboText.setText(`COMBO: x1`);
       this.comboText.setFill('#555555'); 
       
-      // Animacja potrząśnięcia licznikiem przy utracie Combo
       this.tweens.add({
         targets: this.comboText,
         x: this.comboText.x + 10,
@@ -257,14 +258,12 @@ export class GameScene extends Phaser.Scene {
       const reactionTime = Date.now() - targetEnemy.spawnTime;
 
       if (key === targetEnemy.targetCharacter) {
-        // --- SUKCES ---
         this.updateCombo(true); 
         
         this.score += (100 * this.multiplier);
-        
         this.sessionStats.totalHits += 1; 
-        this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
         
+        this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
         ParticleFX.createExplosion(this, targetEnemy.x, targetEnemy.y);
         
         const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
@@ -287,10 +286,10 @@ export class GameScene extends Phaser.Scene {
 
         if (this.activeEnemies.length > 0) this.playOldestEnemyCode();
       } else {
-        // --- BŁĄD ---
         this.cameras.main.shake(100, 0.005);
-        this.sessionStats.totalErrors = (this.sessionStats.totalErrors || 0) + 1;
+        this.sessionStats.totalErrors += 1;
         
+        // Pomyłka z klawiatury
         this.updateCombo(false);
 
         const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
@@ -373,10 +372,7 @@ export class GameScene extends Phaser.Scene {
     hiddenInput.oninput = (e) => {
       const char = e.target.value.slice(-1).toUpperCase();
       hiddenInput.value = '';
-
-      if (char) {
-        this.handleInput({ key: char });
-      }
+      if (char) this.handleInput({ key: char });
     };
 
     setTimeout(() => {
@@ -413,12 +409,11 @@ export class GameScene extends Phaser.Scene {
       this.playerProfile.highScore = this.score;
     }
     
- // --- NOWE: Obliczanie i zapisywanie czasu gry ---
+    // Obliczanie czasu spędzonego w grze od ostatniego zapisu
     const now = Date.now();
-    const playedMs = now - this.sessionStartTime;
+    const playedMs = now - this.lastSaveTime;
     this.playerProfile.totalPlayTimeMs = (this.playerProfile.totalPlayTimeMs || 0) + playedMs;
-    this.sessionStartTime = now; // Resetujemy stoper, żeby nie naliczyć podwójnie
-    
+    this.lastSaveTime = now;
     
     SaveManager.save(this.playerProfile);
   }
@@ -439,39 +434,26 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.shake(200, 0.01);
     this.cameras.main.flash(200, 255, 0, 0);
     
+    // Pomyłka przez przepuszczenie statku
     this.updateCombo(false);
 
     if (this.lives <= 0) {
       this.gameOver();
     } else {
       for (const enemy of this.activeEnemies) {
-        if (enemy && enemy.destroy) {
-          enemy.destroy();
-        }
+        if (enemy && enemy.destroy) enemy.destroy();
       }
       this.activeEnemies = [];
-      
       this.isPlayingAudio = false;
 
-      if (this.spawnTimer) {
-        this.spawnTimer.remove();
-      }
+      if (this.spawnTimer) this.spawnTimer.remove();
       this.scheduleNextSpawn();
-
       this.spawnEnemy();
     }
   }
 
-  abortMission() {
-    this.saveProgress();
-    this.physics.pause();
-    if (this.spawnTimer) this.spawnTimer.remove();
-    this.input.keyboard.off('keydown');
-    this.input.keyboard.off('keydown-ESC');
-    this.scene.start(SCENES.MENU);
-  }
-
-  gameOver() {
+  // --- EKRAN PODSUMOWANIA ---
+  showSummaryScreen(titleText) {
     globalEventBus.off('ACHIEVEMENT_UNLOCKED', this.showAchievementNotification, this);
     
     this.saveProgress();
@@ -482,12 +464,53 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard.off('keydown-ESC');
 
     const { width, height } = this.cameras.main;
-    this.add.text(width / 2, height / 2, 'GAME OVER', {
-      fontFamily: 'monospace', fontSize: '64px', fill: '#ff0000', fontStyle: 'bold'
+
+    // Przyciemnione tło
+    this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9).setOrigin(0.5, 0.5);
+
+    // Tytuł
+    this.add.text(width / 2, height / 2 - 120, titleText, {
+      fontFamily: 'monospace', 
+      fontSize: '48px', 
+      fill: (titleText === 'GAME OVER' ? '#ff0000' : '#ffff00'), 
+      fontStyle: 'bold'
     }).setOrigin(0.5, 0.5);
 
-    this.time.delayedCall(3000, () => {
+    // Obliczanie całkowitego czasu trwania sesji
+    const totalSessionMs = Date.now() - this.sessionStartTime;
+    const minutes = Math.floor(totalSessionMs / 60000);
+    const seconds = Math.floor((totalSessionMs % 60000) / 1000);
+
+    // Formatowanie tekstu statystyk
+    const statsText = `CZAS SESJI : ${minutes} min ${seconds} sek\nTRAFIONE   : ${this.sessionStats.totalHits}\nPOMYŁKI    : ${this.sessionMistakes}`;
+
+    this.add.text(width / 2, height / 2, statsText, {
+      fontFamily: 'monospace', 
+      fontSize: '24px', 
+      fill: '#00ff00', 
+      align: 'left',
+      lineSpacing: 15
+    }).setOrigin(0.5, 0.5);
+
+    // Przycisk powrotu do menu
+    const returnBtn = this.add.text(width / 2, height / 2 + 120, '[ POWRÓT DO MENU ]', {
+      fontFamily: 'monospace', 
+      fontSize: '24px', 
+      fill: '#ffffff'
+    }).setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
+
+    returnBtn.on('pointerover', () => returnBtn.setFill('#00ff00'));
+    returnBtn.on('pointerout', () => returnBtn.setFill('#ffffff'));
+    returnBtn.on('pointerdown', () => {
       this.scene.start(SCENES.MENU);
     });
+  }
+
+  abortMission() {
+    this.showSummaryScreen('MISSION ABORTED');
+  }
+
+  gameOver() {
+    this.showSummaryScreen('GAME OVER');
   }
 }
