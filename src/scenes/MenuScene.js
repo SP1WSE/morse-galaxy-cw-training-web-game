@@ -9,7 +9,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   init() {
-    // Inicjalizacja kontekstu audio dla cyberpunkowych dźwięków interfejsu (nie wymaga plików zewnętrznych)
+    // Inicjalizacja kontekstu audio dla cyberpunkowych dźwięków interfejsu
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     this.audioCtx = new AudioContext();
   }
@@ -105,6 +105,11 @@ export class MenuScene extends Phaser.Scene {
     // WYŚWIETLANIE RANGI, ZNAKÓW ORAZ MINUT
     const totalHits = this.profile.lifetimeHits || 0;
     const totalMinutes = Math.floor((this.profile.totalPlayTimeMs || 0) / 60000);
+    
+    // Formatowanie czasu na godziny i minuty
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    const timeString = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
 
     let rank = "REKRUT";
     if (totalHits >= 100) rank = "SZEREGOWY";
@@ -121,7 +126,7 @@ export class MenuScene extends Phaser.Scene {
       rank = eliteRanks[Math.min(rankLevel - 1, eliteRanks.length - 1)];
     }
 
-    this.add.text(width / 2, height - 35, `[ RANGA: ${rank} | ZNAKI: ${totalHits} | WYLATANE: ${totalMinutes} MIN ]`, {
+    this.add.text(width / 2, height - 35, `[ RANGA: ${rank} | ZNAKI: ${totalHits} | WYLATANE: ${timeString} ]`, {
       fontFamily: 'monospace', fontSize: '15px', fill: '#00ff00', backgroundColor: '#001100', padding: { x: 8, y: 4 }
     }).setOrigin(0.5, 0.5);
   }
@@ -131,57 +136,44 @@ export class MenuScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '22px', fill: '#00ff00'
     }).setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
 
-    // Zapisujemy oryginalną pozycję bazową
     const originalX = x;
 
     btn.on('pointerover', () => {
       this.playHoverSound();
       
-      // Czyścimy ewentualne stare animacje, aby uniknąć konfliktów
-      if (btn.glitchTween) btn.glitchTween.stop();
-      this.tweens.killTweensOf(btn);
+      if (btn.glitchTimer) {
+        btn.glitchTimer.remove();
+      }
       
-      // Kolor cyjanowy + twardy, magentowy cień z przesunięciem (aberracja chromatyczna)
       btn.setFill('#00ffff');
       btn.setShadow(4, 0, '#ff00ff', 0, false, true); 
-      
-      // Zmiana znaków terminala [ ] na zbrojne > <
       btn.setText(label.replace('[', '>').replace(']', '<'));
 
-      // Efekt szarpanego zakłócenia (Glitch)
-      // Używamy addCounter, by manualnie aktualizować właściwości co ułamek sekundy
-      btn.glitchTween = this.tweens.addCounter({
-        from: 0, 
-        to: 1, 
-        duration: 60, // Bardzo krótki cykl odświeżania
-        repeat: -1,   // Nieskończona pętla dopóki trzymasz myszkę
-        onUpdate: () => {
-          // Szansa na to, że klatka będzie "zepsuta"
-          if (Math.random() > 0.3) {
-            btn.setX(originalX + Phaser.Math.Between(-10, 10)); // Rozjazd na boki
-            btn.setScale(Phaser.Math.FloatBetween(0.85, 1.3), 1); // Przekoszenie wzdłużne
-            btn.setAngle(Phaser.Math.Between(-1, 1)); // Minimalny obrót dla "zepsutego sygnału"
+      // Używamy zdarzeń czasowych phasera zamiast tweenów, co jest bezpieczniejsze i daje lepszy efekt cięcia (glitch)
+      btn.glitchTimer = this.time.addEvent({
+        delay: 50, // Bardzo szybka aktualizacja
+        loop: true,
+        callback: () => {
+          if (Math.random() > 0.4) {
+            btn.setX(originalX + Phaser.Math.Between(-8, 8)); 
+            btn.setScale(Phaser.Math.FloatBetween(0.9, 1.2), 1); 
           } else {
-            // Chwilowy powrót do normy nadaje efekt migotania
             btn.setX(originalX);
             btn.setScale(1, 1);
-            btn.setAngle(0);
           }
         }
       });
     });
 
     btn.on('pointerout', () => {
-      // Wyłączamy system glitcha
-      if (btn.glitchTween) btn.glitchTween.stop();
-      this.tweens.killTweensOf(btn);
+      if (btn.glitchTimer) {
+        btn.glitchTimer.remove();
+        btn.glitchTimer = null;
+      }
       
-      // Twardy reset do oryginalnych wartości
       btn.setX(originalX);
       btn.setScale(1, 1);
-      btn.setAngle(0);
       
-      // Powrót do sterylnego zielonego retro
       btn.setFill('#00ff00');
       btn.setShadow(0, 0, 'transparent', 0);
       btn.setText(label);
@@ -190,12 +182,12 @@ export class MenuScene extends Phaser.Scene {
     btn.on('pointerdown', () => {
       this.playClickSound();
       
-      // Efekt wgniatania przycisku przed startem akcji
-      if (btn.glitchTween) btn.glitchTween.stop();
-      this.tweens.killTweensOf(btn);
+      if (btn.glitchTimer) {
+        btn.glitchTimer.remove();
+        btn.glitchTimer = null;
+      }
       btn.setX(originalX);
-      btn.setAngle(0);
-
+      
       this.tweens.add({
         targets: btn,
         scaleX: 0.8,
@@ -221,7 +213,6 @@ export class MenuScene extends Phaser.Scene {
     osc.connect(gain);
     gain.connect(this.audioCtx.destination);
     
-    // Krótkie cyfrowe "brzęknięcie"
     osc.type = 'square';
     osc.frequency.setValueAtTime(600, this.audioCtx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(150, this.audioCtx.currentTime + 0.05);
@@ -243,7 +234,6 @@ export class MenuScene extends Phaser.Scene {
     osc.connect(gain);
     gain.connect(this.audioCtx.destination);
     
-    // Potwierdzający pisk rosnący w górę
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(800, this.audioCtx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(1200, this.audioCtx.currentTime + 0.1);

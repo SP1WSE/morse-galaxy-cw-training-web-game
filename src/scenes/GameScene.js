@@ -30,7 +30,6 @@ export class GameScene extends Phaser.Scene {
     
     this.sessionStats = { totalHits: 0, totalErrors: 0 };
     
-    // Zmienne systemu COMBO i podsumowania
     this.comboCount = 0;
     this.multiplier = 1;
     this.sessionMistakes = 0;
@@ -38,14 +37,28 @@ export class GameScene extends Phaser.Scene {
     this.gameMode = data && data.mode ? data.mode : 'campaign';
     this.selectedTrainingLevel = data && data.level ? data.level : 5;
     
-    // Zegary sesji
     const now = Date.now();
     this.sessionStartTime = now;
     this.lastSaveTime = now;
     
-    // Zmienne do pauzy (żeby nie naliczać czasu, gdy gra stoi)
     this.totalPauseTime = 0;
     this.pauseStartTime = 0;
+
+    // --- ZMIENNE BOSSA ---
+    this.bossWords = [
+      'QRT','QSB','QTH','QRQ','QRS','QRL','QRP','QSY','QRM','QRN',
+      'QRO','QRV','QRX','QRZ','DE','KN','RR','RRR','TNX','TU',
+      'FB','GA','GM','GE','CU','FER','HW?','OP','73','88','44',
+      'GL','VY','RST','5NN','SK','DR','OM','UR','NAME','CALL',
+      'CQ','POTA','SOTA','TEST','DX','SP1','5W','NR','AGN',
+      '599','BK','EFHW','ANDY','TOM','817'
+    ];
+    // Oddzielny licznik punktów tylko dla bossa - dzięki temu 10k bonusu nie psuje cyklu
+    this.bossProgress = 0; 
+    this.bossThreshold = 5000; 
+    
+    this.bossPhase = false; 
+    this.isBossActive = false; 
   }
 
   create() {
@@ -150,18 +163,11 @@ export class GameScene extends Phaser.Scene {
     endMissionBtn.on('pointerdown', () => this.exitToMenu());
     
     this.pauseContainer.add(endMissionBtn);
-
-    this.pauseContainer.add(this.add.text(width / 2, height / 2 + 170, 'Press [ESC] to resume', {
-      fontFamily: 'monospace', fontSize: '18px', fill: '#aaaaaa'
-    }).setOrigin(0.5, 0.5));
-    
     this.pauseContainer.setVisible(false);
 
     this.enemyGroup = this.physics.add.group();
     
     this.input.keyboard.on('keydown', this.handleInput, this);
-    
-    // Obsługa ESC jako toggle pauzy
     this.input.keyboard.on('keydown-ESC', this.togglePause, this);
 
     globalEventBus.on('ACHIEVEMENT_UNLOCKED', this.showAchievementNotification, this);
@@ -170,76 +176,71 @@ export class GameScene extends Phaser.Scene {
     this.setupMobileKeyboardInput();
   }
 
-  // --- EFEKTY DŹWIĘKOWE (SFX) ---
   playExplosionSound() {
     if (!this.sfxCtx) return;
     if (this.sfxCtx.state === 'suspended') this.sfxCtx.resume();
 
-    // Generowanie białego szumu (white noise)
-    const bufferSize = this.sfxCtx.sampleRate * 0.3; // Długość: 0.3 sekundy
+    const bufferSize = this.sfxCtx.sampleRate * 0.3; 
     const buffer = this.sfxCtx.createBuffer(1, bufferSize, this.sfxCtx.sampleRate);
     const data = buffer.getChannelData(0);
     
     for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1; // Szum od -1 do 1
+      data[i] = Math.random() * 2 - 1; 
     }
 
     const noiseSource = this.sfxCtx.createBufferSource();
     noiseSource.buffer = buffer;
 
-    // Filtr dolnoprzepustowy - obcina wysokie częstotliwości, dając "głuchy" wybuch
     const filter = this.sfxCtx.createBiquadFilter();
     filter.type = 'lowpass';
     filter.frequency.setValueAtTime(1200, this.sfxCtx.currentTime);
     filter.frequency.exponentialRampToValueAtTime(100, this.sfxCtx.currentTime + 0.2);
 
-    // Głośność gasnąca w czasie
     const gainNode = this.sfxCtx.createGain();
-    gainNode.gain.setValueAtTime(0.3, this.sfxCtx.currentTime); // głośność początkowa (30%)
+    gainNode.gain.setValueAtTime(0.3, this.sfxCtx.currentTime); 
     gainNode.gain.exponentialRampToValueAtTime(0.01, this.sfxCtx.currentTime + 0.3);
 
-    // Łączenie węzłów
     noiseSource.connect(filter);
     filter.connect(gainNode);
     gainNode.connect(this.sfxCtx.destination);
 
-    // Odpalenie dźwięku
     noiseSource.start();
   }
 
-  // --- LOGIKA PAUZY ---
   togglePause() {
     if (this.lives <= 0 || this.scene.isSleeping()) return;
 
     this.isPaused = !this.isPaused;
 
     if (this.isPaused) {
-      // Włączamy pauzę
       this.pauseStartTime = Date.now();
       this.physics.pause();
       if (this.spawnTimer) this.spawnTimer.paused = true;
       
-      // Obliczanie aktualnego czasu gry
+      if (this.activeEnemies.length > 0 && this.activeEnemies[0].isBoss && this.activeEnemies[0].bossAudioTimer) {
+        this.activeEnemies[0].bossAudioTimer.paused = true;
+      }
+      
       const activeSessionMs = Date.now() - this.sessionStartTime - this.totalPauseTime;
       const minutes = Math.floor(activeSessionMs / 60000);
       const seconds = Math.floor((activeSessionMs % 60000) / 1000);
 
-      // Aktualizacja tekstu w oknie pauzy
-      const statsStr = `CZAS SESJI : ${minutes} min ${seconds} sek\nTRAFIONE   : ${this.sessionStats.totalHits}\nPOMYŁKI    : ${this.sessionMistakes}`;
-      this.pauseStatsText.setText(statsStr);
-      
+      this.pauseStatsText.setText(`CZAS SESJI : ${minutes} min ${seconds} sek\nTRAFIONE   : ${this.sessionStats.totalHits}\nPOMYŁKI    : ${this.sessionMistakes}`);
       this.pauseContainer.setVisible(true);
     } else {
-      // Wracamy do gry
       this.totalPauseTime += (Date.now() - this.pauseStartTime);
       this.pauseContainer.setVisible(false);
       
       this.physics.resume();
       if (this.spawnTimer) this.spawnTimer.paused = false;
       
-      // Jeśli gra niczego teraz nie odtwarza, każ statkom znów nadawać
-      if (!this.isPlayingAudio && this.activeEnemies.length > 0) {
-        this.playOldestEnemyCode();
+      if (this.activeEnemies.length > 0) {
+        const target = this.activeEnemies[0];
+        if (target.isBoss && target.bossAudioTimer) {
+          target.bossAudioTimer.paused = false;
+        } else if (!this.isPlayingAudio) {
+          this.playOldestEnemyCode();
+        }
       }
     }
   }
@@ -255,34 +256,19 @@ export class GameScene extends Phaser.Scene {
       else if (this.comboCount >= 5) { newMultiplier = 2; color = '#ffff00'; } 
 
       if (newMultiplier > this.multiplier) {
-        this.tweens.add({
-          targets: this.comboText,
-          scaleX: 1.5, scaleY: 1.5,
-          duration: 150,
-          yoyo: true,
-          ease: 'Power2'
-        });
+        this.tweens.add({ targets: this.comboText, scaleX: 1.5, scaleY: 1.5, duration: 150, yoyo: true, ease: 'Power2' });
       }
 
       this.multiplier = newMultiplier;
       this.comboText.setText(`COMBO: x${this.multiplier}`);
       this.comboText.setFill(this.multiplier > 1 ? color : '#aaaaaa');
-      
     } else {
       this.sessionMistakes += 1;
-      
       this.comboCount = 0;
       this.multiplier = 1;
       this.comboText.setText(`COMBO: x1`);
       this.comboText.setFill('#555555'); 
-      
-      this.tweens.add({
-        targets: this.comboText,
-        x: this.comboText.x + 10,
-        duration: 50,
-        yoyo: true,
-        repeat: 3
-      });
+      this.tweens.add({ targets: this.comboText, x: this.comboText.x + 10, duration: 50, yoyo: true, repeat: 3 });
     }
   }
 
@@ -294,11 +280,37 @@ export class GameScene extends Phaser.Scene {
 
     for (let i = this.activeEnemies.length - 1; i >= 0; i--) {
       const enemy = this.activeEnemies[i];
-      if (enemy.y >= this.defenseLineY) {
-        this.takeDamage();
-        enemy.destroy();
-        this.activeEnemies.splice(i, 1);
+      
+      if (enemy.isBoss && enemy.bossTextObj) {
+        enemy.bossTextObj.x = enemy.x;
+        enemy.bossTextObj.y = enemy.y - 45;
       }
+
+      if (enemy.y >= this.defenseLineY) {
+        if (enemy.isBoss) {
+          // Boss ucieka - zdejmujemy go z ekranu bez kary
+          if (enemy.bossAudioTimer) enemy.bossAudioTimer.remove();
+          if (enemy.bossTextObj) enemy.bossTextObj.destroy();
+          enemy.destroy();
+          this.activeEnemies.splice(i, 1);
+          this.endBossPhase();
+        } else {
+          // Przepuszczony zwykły statek = obrażenia
+          this.takeDamage();
+          enemy.destroy();
+          this.activeEnemies.splice(i, 1);
+        }
+      }
+    }
+
+    // Odpalenie animacji Bossa, gdy wszystkie normalne statki zostaną zestrzelone/uciekną
+    if (this.bossPhase && !this.isBossActive && this.activeEnemies.length === 0) {
+      this.isBossActive = true;
+      this.showBossWarningBanner();
+      
+      this.time.delayedCall(2500, () => {
+        if (!this.isPaused) this.spawnBoss();
+      });
     }
   }
 
@@ -306,20 +318,23 @@ export class GameScene extends Phaser.Scene {
     if (!this.textures.exists('starfield')) {
       const graphics = this.make.graphics({ x: 0, y: 0, add: false });
       graphics.fillStyle(0xffffff, 1);
-      for(let i = 0; i < 200; i++) {
-        graphics.fillRect(Math.random() * width, Math.random() * height, 2, 2);
-      }
+      for(let i = 0; i < 200; i++) graphics.fillRect(Math.random() * width, Math.random() * height, 2, 2);
       graphics.generateTexture('starfield', width, height);
     }
   }
 
   scheduleNextSpawn() {
+    if (this.bossPhase || this.isBossActive) return;
+
     const currentDelay = 2000; 
-    
     this.spawnTimer = this.time.delayedCall(currentDelay, () => {
       this.spawnEnemy();
       this.scheduleNextSpawn(); 
     });
+
+    if (this.isPaused) {
+      this.spawnTimer.paused = true;
+    }
   }
 
   async spawnEnemy() {
@@ -333,15 +348,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     const xPos = Phaser.Math.Between(100, this.cameras.main.width - 100);
-    
     const enemy = new EnemyShip(this, xPos, -50, targetChar);
     enemy.spawnTime = Date.now();
     
     this.enemyGroup.add(enemy);
-    
     const fixedSpeed = Number(this.playerProfile.settings.baseGameSpeed) || 100;
     enemy.body.setVelocityY(fixedSpeed); 
-    
     this.activeEnemies.push(enemy);
 
     if (!this.isPlayingAudio && !this.isPaused) {
@@ -349,17 +361,99 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // --- LOGIKA BOSSA ---
+  showBossWarningBanner() {
+    const { width, height } = this.cameras.main;
+    const banner = this.add.text(width / 2, height / 2, "⚠ UNKNOWN SIGNAL DETECTED ⚠", {
+      fontFamily: 'monospace', fontSize: '32px', fill: '#ff00ff', fontStyle: 'bold', backgroundColor: '#220022', padding: { x: 20, y: 20 }
+    }).setOrigin(0.5, 0.5);
+    
+    this.tweens.add({
+      targets: banner,
+      alpha: 0,
+      duration: 400,
+      yoyo: true,
+      repeat: 3,
+      onComplete: () => banner.destroy()
+    });
+  }
+
+  spawnBoss() {
+    const word = Phaser.Math.RND.pick(this.bossWords);
+    const xPos = Phaser.Math.Between(150, this.cameras.main.width - 150);
+    
+    const boss = new EnemyShip(this, xPos, -80, word);
+    boss.isBoss = true;
+    boss.fullWord = word;
+    boss.remainingWord = word;
+    boss.spawnTime = Date.now();
+    boss.setScale(1.5);
+    
+    this.enemyGroup.add(boss);
+    const fixedSpeed = Number(this.playerProfile.settings.baseGameSpeed) || 100;
+    boss.body.setVelocityY(fixedSpeed * 0.4); 
+    
+    this.activeEnemies.push(boss);
+    
+    // WYŚWIETLAMY TYLKO KROPKI
+    const dots = '.'.repeat(word.length);
+    boss.bossTextObj = this.add.text(xPos, -125, dots, {
+      fontFamily: 'monospace', fontSize: '36px', fill: '#ff00ff', fontStyle: 'bold', padding: {x: 5, y: 5}
+    }).setOrigin(0.5, 0.5);
+    boss.bossTextObj.setDepth(50);
+
+    if (!this.isPlayingAudio && !this.isPaused) {
+      this.playOldestEnemyCode();
+    }
+  }
+
+  endBossPhase() {
+    this.bossPhase = false;
+    this.isBossActive = false;
+    this.time.delayedCall(2000, () => {
+      this.scheduleNextSpawn();
+      // Od razu wypuszczamy wroga, żeby nie tracić czasu
+      if (this.activeEnemies.length === 0 && !this.isPaused) {
+        this.spawnEnemy();
+      }
+    });
+  }
+
   async playOldestEnemyCode() {
     if (this.activeEnemies.length === 0 || this.isPaused) return;
+    if (this.isPlayingAudio) return; 
+    
     this.isPlayingAudio = true;
     const target = this.activeEnemies[0];
     
     try {
-      await this.cwEngine.playCharacter(target.targetCharacter);
+      if (target.isBoss) {
+        // Zawsze odgrywamy bossowi PEŁNE słowo
+        for (let i = 0; i < target.fullWord.length; i++) {
+          if (this.isPaused || !this.activeEnemies.includes(target)) break; 
+          await this.cwEngine.playCharacter(target.fullWord[i]);
+          if (i < target.fullWord.length - 1) {
+            await new Promise(res => setTimeout(res, 150)); 
+          }
+        }
+      } else {
+        await this.cwEngine.playCharacter(target.targetCharacter);
+      }
     } catch (e) {
       console.error(e);
     } finally {
       this.isPlayingAudio = false;
+
+      // PĘTLA DŹWIĘKOWA BOSSA CO 3 SEKUNDY
+      if (target.isBoss && this.activeEnemies.includes(target)) {
+        if (target.bossAudioTimer) target.bossAudioTimer.remove();
+        
+        target.bossAudioTimer = this.time.delayedCall(3000, () => {
+          if (this.activeEnemies.includes(target) && !this.isPaused) {
+             this.playOldestEnemyCode();
+          }
+        });
+      }
     }
   }
 
@@ -373,14 +467,68 @@ export class GameScene extends Phaser.Scene {
       const targetEnemy = this.activeEnemies[0];
       const reactionTime = Date.now() - targetEnemy.spawnTime;
 
+      // --- LOGIKA BOSSA ---
+      if (targetEnemy.isBoss) {
+        const expectedChar = targetEnemy.remainingWord[0];
+        
+        if (key === expectedChar) {
+          targetEnemy.remainingWord = targetEnemy.remainingWord.substring(1);
+          
+          targetEnemy.bossTextObj.setText('.'.repeat(targetEnemy.remainingWord.length));
+          ParticleFX.createExplosion(this, targetEnemy.x, targetEnemy.y);
+
+          if (targetEnemy.remainingWord.length === 0) {
+            // BOSS ZABITY - Nagroda
+            if (targetEnemy.bossAudioTimer) targetEnemy.bossAudioTimer.remove();
+            
+            this.playExplosionSound();
+            this.score += 10000;
+            this.lives += 1; 
+            this.livesText.setText(`LIVES: ${this.lives}`);
+            
+            this.livesText.setFill('#ff00ff');
+            this.time.delayedCall(500, () => this.livesText.setFill('#00ff00'));
+            
+            this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
+            ParticleFX.createExplosion(this, targetEnemy.x, targetEnemy.y);
+            
+            if (targetEnemy.bossTextObj) targetEnemy.bossTextObj.destroy();
+            
+            if (typeof targetEnemy.destroyShip === 'function') {
+               targetEnemy.destroyShip();
+            } else {
+               targetEnemy.destroy();
+            }
+            
+            this.activeEnemies.shift();
+            this.endBossPhase();
+            
+            if (this.activeEnemies.length > 0) this.playOldestEnemyCode();
+          }
+        } else {
+          this.cameras.main.shake(100, 0.005);
+          this.updateCombo(false);
+        }
+        return; 
+      }
+
+      // --- LOGIKA ZWYKŁEGO STATKU ---
       if (key === targetEnemy.targetCharacter) {
-        // SUKCES - Trafienie!
         this.updateCombo(true); 
-        this.playExplosionSound(); // Odtwórz dźwięk zniszczenia statku
+        this.playExplosionSound(); 
         
-        this.score += (100 * this.multiplier);
+        const earnedPoints = 100 * this.multiplier;
+        this.score += earnedPoints;
+        this.bossProgress += earnedPoints; // Ładujemy osobny licznik bossa
+        
+        // ZAWŁOANIE BOSSA TYLKO, GDY LICZNIK PRZEKROCZY PRÓG (np. 5000 pkt)
+        if (this.bossProgress >= this.bossThreshold && !this.bossPhase) {
+          this.bossPhase = true;
+          this.bossProgress -= this.bossThreshold; // Resetujemy licznik, zachowując nadwyżkę dla następnego!
+          if (this.spawnTimer) this.spawnTimer.remove(); 
+        }
+
         this.sessionStats.totalHits += 1; 
-        
         this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
         ParticleFX.createExplosion(this, targetEnemy.x, targetEnemy.y);
         
@@ -399,15 +547,17 @@ export class GameScene extends Phaser.Scene {
           this.achievements.checkAchievements(this.sessionStats, this.ai.level);
         }
 
-        targetEnemy.destroyShip();
+        if (typeof targetEnemy.destroyShip === 'function') {
+           targetEnemy.destroyShip();
+        } else {
+           targetEnemy.destroy();
+        }
         this.activeEnemies.shift();
 
         if (this.activeEnemies.length > 0) this.playOldestEnemyCode();
       } else {
-        // PUDŁO
         this.cameras.main.shake(100, 0.005);
         this.sessionStats.totalErrors += 1;
-        
         this.updateCombo(false);
 
         const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
@@ -420,7 +570,6 @@ export class GameScene extends Phaser.Scene {
 
   showLevelUpBanner(level, newChar) {
     const { width, height } = this.cameras.main;
-
     const bannerBg = this.add.rectangle(width / 2, height / 2, width, 120, 0x000000, 0.9).setOrigin(0.5, 0.5);
     
     const bannerText = this.add.text(width / 2, height / 2 - 20, `NEXT LEVEL: ${level}`, {
@@ -436,33 +585,18 @@ export class GameScene extends Phaser.Scene {
     subText.setAlpha(0);
 
     this.tweens.add({
-      targets: bannerBg,
-      scaleY: 1,
-      duration: 250,
-      ease: 'Back.out',
-      onComplete: () => {
-        this.tweens.add({
-          targets: [bannerText, subText],
-          alpha: 1,
-          duration: 200
-        });
-      }
+      targets: bannerBg, scaleY: 1, duration: 250, ease: 'Back.out',
+      onComplete: () => { this.tweens.add({ targets: [bannerText, subText], alpha: 1, duration: 200 }); }
     });
 
     this.time.delayedCall(3000, () => {
       this.tweens.add({
-        targets: [bannerText, subText],
-        alpha: 0,
-        duration: 200,
+        targets: [bannerText, subText], alpha: 0, duration: 200,
         onComplete: () => {
           this.tweens.add({
-            targets: bannerBg,
-            scaleY: 0,
-            duration: 250,
+            targets: bannerBg, scaleY: 0, duration: 250,
             onComplete: () => {
-              bannerBg.destroy();
-              bannerText.destroy();
-              subText.destroy();
+              bannerBg.destroy(); bannerText.destroy(); subText.destroy();
             }
           });
         }
@@ -483,9 +617,7 @@ export class GameScene extends Phaser.Scene {
       document.body.appendChild(hiddenInput);
     }
 
-    this.input.on('pointerdown', () => {
-      hiddenInput.focus();
-    });
+    this.input.on('pointerdown', () => hiddenInput.focus());
 
     hiddenInput.oninput = (e) => {
       const char = e.target.value.slice(-1).toUpperCase();
@@ -493,52 +625,35 @@ export class GameScene extends Phaser.Scene {
       if (char) this.handleInput({ key: char });
     };
 
-    setTimeout(() => {
-      hiddenInput.focus();
-    }, 300);
+    setTimeout(() => hiddenInput.focus(), 300);
   }
 
   showAchievementNotification(achievement) {
     const { width, height } = this.cameras.main;
     const popup = this.add.text(width / 2, height - 80, `ACHIEVEMENT UNLOCKED:\n${achievement.title}`, {
-      fontFamily: 'monospace', fontSize: '20px', fill: '#000000', backgroundColor: '#00ff00',
-      align: 'center', padding: { x: 10, y: 10 }
+      fontFamily: 'monospace', fontSize: '20px', fill: '#000000', backgroundColor: '#00ff00', align: 'center', padding: { x: 10, y: 10 }
     }).setOrigin(0.5, 0.5);
 
-    this.tweens.add({
-      targets: popup,
-      y: height - 130,
-      alpha: 0,
-      duration: 3000,
-      ease: 'Power2',
-      onComplete: () => popup.destroy()
-    });
+    this.tweens.add({ targets: popup, y: height - 130, alpha: 0, duration: 3000, ease: 'Power2', onComplete: () => popup.destroy() });
   }
 
   saveProgress() {
     const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
-    
     if (!isTraining) {
       this.playerProfile.kochLevel = this.ai.level;
       this.playerProfile.stats = this.ai.exportState().stats;
     }
-    
     if (this.score > (this.playerProfile.highScore || 0)) {
       this.playerProfile.highScore = this.score;
     }
-    
     const now = Date.now();
     const playedMs = now - this.lastSaveTime;
-    
-    // Obliczanie realnego czasu spędzonego na graniu (odliczając czas z menu pauzy od ostatniego zapisu)
     let activePlayTimeSinceLastSave = playedMs;
     if (this.isPaused) {
       activePlayTimeSinceLastSave -= (now - this.pauseStartTime);
     }
-    
     this.playerProfile.totalPlayTimeMs = (this.playerProfile.totalPlayTimeMs || 0) + activePlayTimeSinceLastSave;
     this.lastSaveTime = now;
-    
     SaveManager.save(this.playerProfile);
   }
 
@@ -552,26 +667,38 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  clearEnemies() {
+    for (const enemy of this.activeEnemies) {
+      if (enemy.isBoss) {
+        if (enemy.bossAudioTimer) enemy.bossAudioTimer.remove();
+        if (enemy.bossTextObj) enemy.bossTextObj.destroy();
+      }
+      if (enemy && enemy.destroy) enemy.destroy();
+    }
+    this.activeEnemies = [];
+  }
+
   takeDamage() {
     this.lives -= 1;
     this.livesText.setText(`LIVES: ${this.lives}`);
     this.cameras.main.shake(200, 0.01);
     this.cameras.main.flash(200, 255, 0, 0);
-    
     this.updateCombo(false);
 
     if (this.lives <= 0) {
       this.gameOver();
     } else {
-      for (const enemy of this.activeEnemies) {
-        if (enemy && enemy.destroy) enemy.destroy();
-      }
-      this.activeEnemies = [];
+      this.clearEnemies();
       this.isPlayingAudio = false;
 
       if (this.spawnTimer) this.spawnTimer.remove();
-      this.scheduleNextSpawn();
-      this.spawnEnemy();
+      
+      // Jeśli jesteśmy w fazie Bossa, to przepuszczenie zwykłego statku
+      // wywoła natychmiastowe nadejście Bossa, bez doczepiania "karnego" normalnego statku!
+      if (!this.bossPhase && !this.isBossActive) {
+        this.scheduleNextSpawn();
+        this.spawnEnemy();
+      }
     }
   }
 
@@ -581,53 +708,36 @@ export class GameScene extends Phaser.Scene {
     this.scene.start(SCENES.MENU);
   }
 
-  // --- EKRAN PODSUMOWANIA (GAME OVER) ---
   showSummaryScreen(titleText) {
     globalEventBus.off('ACHIEVEMENT_UNLOCKED', this.showAchievementNotification, this);
-    
     this.saveProgress();
-    
     this.physics.pause();
     if (this.spawnTimer) this.spawnTimer.remove();
     this.input.keyboard.off('keydown');
     this.input.keyboard.off('keydown-ESC');
 
     const { width, height } = this.cameras.main;
-
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9).setOrigin(0.5, 0.5);
-
     this.add.text(width / 2, height / 2 - 120, titleText, {
-      fontFamily: 'monospace', 
-      fontSize: '48px', 
-      fill: (titleText === 'GAME OVER' ? '#ff0000' : '#ffff00'), 
-      fontStyle: 'bold'
+      fontFamily: 'monospace', fontSize: '48px', fill: (titleText === 'GAME OVER' ? '#ff0000' : '#ffff00'), fontStyle: 'bold'
     }).setOrigin(0.5, 0.5);
 
     const activeSessionMs = Date.now() - this.sessionStartTime - this.totalPauseTime;
     const minutes = Math.floor(activeSessionMs / 60000);
     const seconds = Math.floor((activeSessionMs % 60000) / 1000);
-
     const statsText = `CZAS SESJI : ${minutes} min ${seconds} sek\nTRAFIONE   : ${this.sessionStats.totalHits}\nPOMYŁKI    : ${this.sessionMistakes}`;
 
     this.add.text(width / 2, height / 2, statsText, {
-      fontFamily: 'monospace', 
-      fontSize: '24px', 
-      fill: '#00ff00', 
-      align: 'left',
-      lineSpacing: 15
+      fontFamily: 'monospace', fontSize: '24px', fill: '#00ff00', align: 'left', lineSpacing: 15
     }).setOrigin(0.5, 0.5);
 
     const returnBtn = this.add.text(width / 2, height / 2 + 120, '[ POWRÓT DO MENU ]', {
-      fontFamily: 'monospace', 
-      fontSize: '24px', 
-      fill: '#ffffff'
+      fontFamily: 'monospace', fontSize: '24px', fill: '#ffffff'
     }).setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
 
     returnBtn.on('pointerover', () => returnBtn.setFill('#00ff00'));
     returnBtn.on('pointerout', () => returnBtn.setFill('#ffffff'));
-    returnBtn.on('pointerdown', () => {
-      this.scene.start(SCENES.MENU);
-    });
+    returnBtn.on('pointerdown', () => this.scene.start(SCENES.MENU));
   }
 
   gameOver() {
