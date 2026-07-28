@@ -53,7 +53,6 @@ export class GameScene extends Phaser.Scene {
       'CQ','POTA','SOTA','TEST','DX','SP1','5W','NR','AGN',
       '599','BK','EFHW','ANDY','TOM','817'
     ];
-    // Oddzielny licznik punktów tylko dla bossa - dzięki temu 10k bonusu nie psuje cyklu
     this.bossProgress = 0; 
     this.bossThreshold = 5000; 
     
@@ -506,8 +505,9 @@ export class GameScene extends Phaser.Scene {
             if (this.activeEnemies.length > 0) this.playOldestEnemyCode();
           }
         } else {
+          // BŁĄD NA BOSSIE: Wyłączyliśmy updateCombo(false), zeby nie psuć mnożnika!
+          // Również nie dotykamy statystyk AI. Jedynie robimy trzęsienie ekranu.
           this.cameras.main.shake(100, 0.005);
-          this.updateCombo(false);
         }
         return; 
       }
