@@ -51,7 +51,13 @@ export class GameScene extends Phaser.Scene {
       'FB','GA','GM','GE','CU','FER','HW?','OP','73','88','44',
       'GL','VY','RST','5NN','SK','DR','OM','UR','NAME','CALL',
       'CQ','POTA','SOTA','TEST','DX','SP1','5W','NR','AGN',
-      '599','BK','EFHW','ANDY','TOM','817'
+      '599','BK','EFHW','ANDY','TOM','817','AR','AS','CL','CFM',
+      'MSG','TEMP','PWR','MNI','HV','NIL','TKS','CUL','CUAGN',
+      'GB','GD','HPE','QTC','EXCH','SER','RUN','SNP','PARK',
+      'REF','ACT','HUNTER','SPOT','LOG','WWFF','SPFF','579','589',
+      '559','123','SN','SQ','DL','OK','OM','OE','SM','LA',
+      'OH','PA','CT','LZ','M0ABC','EA5AAA','F4XYZ','N7DR','SP1WSE',
+      'HR','NW','ABT','B4','XCVR','SIGS'     
     ];
     this.bossProgress = 0; 
     this.bossThreshold = 5000; 
@@ -477,16 +483,11 @@ export class GameScene extends Phaser.Scene {
           ParticleFX.createExplosion(this, targetEnemy.x, targetEnemy.y);
 
           if (targetEnemy.remainingWord.length === 0) {
-            // BOSS ZABITY - Nagroda
+            // BOSS ZABITY - Nagroda tylko punktowa (+10000)
             if (targetEnemy.bossAudioTimer) targetEnemy.bossAudioTimer.remove();
             
             this.playExplosionSound();
             this.score += 10000;
-            this.lives += 1; 
-            this.livesText.setText(`LIVES: ${this.lives}`);
-            
-            this.livesText.setFill('#ff00ff');
-            this.time.delayedCall(500, () => this.livesText.setFill('#00ff00'));
             
             this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
             ParticleFX.createExplosion(this, targetEnemy.x, targetEnemy.y);
@@ -505,8 +506,7 @@ export class GameScene extends Phaser.Scene {
             if (this.activeEnemies.length > 0) this.playOldestEnemyCode();
           }
         } else {
-          // BŁĄD NA BOSSIE: Wyłączyliśmy updateCombo(false), zeby nie psuć mnożnika!
-          // Również nie dotykamy statystyk AI. Jedynie robimy trzęsienie ekranu.
+          // BŁĄD NA BOSSIE: Trzęsienie ekranu, brak utraty mnożnika i życia
           this.cameras.main.shake(100, 0.005);
         }
         return; 
@@ -519,12 +519,11 @@ export class GameScene extends Phaser.Scene {
         
         const earnedPoints = 100 * this.multiplier;
         this.score += earnedPoints;
-        this.bossProgress += earnedPoints; // Ładujemy osobny licznik bossa
+        this.bossProgress += earnedPoints; 
         
-        // ZAWŁOANIE BOSSA TYLKO, GDY LICZNIK PRZEKROCZY PRÓG (np. 5000 pkt)
         if (this.bossProgress >= this.bossThreshold && !this.bossPhase) {
           this.bossPhase = true;
-          this.bossProgress -= this.bossThreshold; // Resetujemy licznik, zachowując nadwyżkę dla następnego!
+          this.bossProgress -= this.bossThreshold; 
           if (this.spawnTimer) this.spawnTimer.remove(); 
         }
 
@@ -693,8 +692,6 @@ export class GameScene extends Phaser.Scene {
 
       if (this.spawnTimer) this.spawnTimer.remove();
       
-      // Jeśli jesteśmy w fazie Bossa, to przepuszczenie zwykłego statku
-      // wywoła natychmiastowe nadejście Bossa, bez doczepiania "karnego" normalnego statku!
       if (!this.bossPhase && !this.isBossActive) {
         this.scheduleNextSpawn();
         this.spawnEnemy();
