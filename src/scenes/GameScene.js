@@ -465,104 +465,140 @@ export class GameScene extends Phaser.Scene {
   handleInput(event) {
     if (this.isPaused) return;
 
-    const key = event.key.toUpperCase();
+    // 1. Zabezpieczenie przed trzymaniem klawisza (auto-repeat) na PC
+    if (event && event.repeat) return;
+
+    const key = (event.key || '').toUpperCase();
     if (!/^[A-Z0-9.\/,?]$/.test(key)) return;
 
-    if (this.activeEnemies.length > 0) {
-      const targetEnemy = this.activeEnemies[0];
+    // 2. KLUCZOWE: Zabezpieczenie przed podwójnym sygnałem (keydown z PC + input z mobile-fix)
+    const now = Date.now();
+    if (this.lastInputTime && (now - this.lastInputTime < 60) && this.lastInputKey === key) {
+      return; 
+    }
+    this.lastInputTime = now;
+    this.lastInputKey = key;
+
+    if (this.activeEnemies.length === 0) return;
+
+    const firstEnemy = this.activeEnemies[0];
+
+    // --- LOGIKA BOSSA ---
+    if (firstEnemy.isBoss) {
+      const expectedChar = firstEnemy.remainingWord[0];
+      
+      if (key === expectedChar) {
+        firstEnemy.remainingWord = firstEnemy.remainingWord.substring(1);
+        
+        firstEnemy.bossTextObj.setText('.'.repeat(firstEnemy.remainingWord.length));
+        ParticleFX.createExplosion(this, firstEnemy.x, firstEnemy.y);
+
+        if (firstEnemy.remainingWord.length === 0) {
+          // BOSS ZABITY - Nagroda tylko punktowa (+10000)
+          if (firstEnemy.bossAudioTimer) firstEnemy.bossAudioTimer.remove();
+          
+          this.playExplosionSound();
+          this.score += 10000;
+          
+          this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
+          ParticleFX.createExplosion(this, firstEnemy.x, firstEnemy.y);
+          
+          if (firstEnemy.bossTextObj) firstEnemy.bossTextObj.destroy();
+          
+          if (typeof firstEnemy.destroyShip === 'function') {
+             firstEnemy.destroyShip();
+          } else {
+             firstEnemy.destroy();
+          }
+          
+          this.activeEnemies.shift();
+          this.endBossPhase();
+          
+          if (this.activeEnemies.length > 0) this.playOldestEnemyCode();
+        }
+      } else {
+        // BŁĄD NA BOSSIE: Trzęsienie ekranu, brak utraty mnożnika i życia
+        this.cameras.main.shake(100, 0.005);
+      }
+      return; 
+    }
+
+    // --- LOGIKA ZWYKŁYCH STATKÓW ---
+    // Szukamy dowolnego statku z tą literą na ekranie, zaczynając od najniższego
+    let hitIndex = -1;
+    let lowestY = -Infinity;
+    
+    for (let i = 0; i < this.activeEnemies.length; i++) {
+      if (this.activeEnemies[i].targetCharacter === key) {
+        if (this.activeEnemies[i].y > lowestY) {
+          lowestY = this.activeEnemies[i].y;
+          hitIndex = i;
+        }
+      }
+    }
+
+    if (hitIndex !== -1) {
+      // Trafiliśmy w JEDEN Z OBECNYCH NA EKRANIE znaków
+      const targetEnemy = this.activeEnemies[hitIndex];
       const reactionTime = Date.now() - targetEnemy.spawnTime;
 
-      // --- LOGIKA BOSSA ---
-      if (targetEnemy.isBoss) {
-        const expectedChar = targetEnemy.remainingWord[0];
-        
-        if (key === expectedChar) {
-          targetEnemy.remainingWord = targetEnemy.remainingWord.substring(1);
-          
-          targetEnemy.bossTextObj.setText('.'.repeat(targetEnemy.remainingWord.length));
-          ParticleFX.createExplosion(this, targetEnemy.x, targetEnemy.y);
-
-          if (targetEnemy.remainingWord.length === 0) {
-            // BOSS ZABITY - Nagroda tylko punktowa (+10000)
-            if (targetEnemy.bossAudioTimer) targetEnemy.bossAudioTimer.remove();
-            
-            this.playExplosionSound();
-            this.score += 10000;
-            
-            this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
-            ParticleFX.createExplosion(this, targetEnemy.x, targetEnemy.y);
-            
-            if (targetEnemy.bossTextObj) targetEnemy.bossTextObj.destroy();
-            
-            if (typeof targetEnemy.destroyShip === 'function') {
-               targetEnemy.destroyShip();
-            } else {
-               targetEnemy.destroy();
-            }
-            
-            this.activeEnemies.shift();
-            this.endBossPhase();
-            
-            if (this.activeEnemies.length > 0) this.playOldestEnemyCode();
-          }
-        } else {
-          // BŁĄD NA BOSSIE: Trzęsienie ekranu, brak utraty mnożnika i życia
-          this.cameras.main.shake(100, 0.005);
-        }
-        return; 
+      this.updateCombo(true); 
+      this.playExplosionSound(); 
+      
+      const earnedPoints = 100 * this.multiplier;
+      this.score += earnedPoints;
+      this.bossProgress += earnedPoints; 
+      
+      if (this.bossProgress >= this.bossThreshold && !this.bossPhase) {
+        this.bossPhase = true;
+        this.bossProgress -= this.bossThreshold; 
+        if (this.spawnTimer) this.spawnTimer.remove(); 
       }
 
-      // --- LOGIKA ZWYKŁEGO STATKU ---
-      if (key === targetEnemy.targetCharacter) {
-        this.updateCombo(true); 
-        this.playExplosionSound(); 
+      this.sessionStats.totalHits += 1; 
+      this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
+      ParticleFX.createExplosion(this, targetEnemy.x, targetEnemy.y);
+      
+      const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
+      
+      if (!isTraining) {
+        const oldLevel = this.ai.level;
+        this.ai.recordAttempt(key, reactionTime, true);
         
-        const earnedPoints = 100 * this.multiplier;
-        this.score += earnedPoints;
-        this.bossProgress += earnedPoints; 
-        
-        if (this.bossProgress >= this.bossThreshold && !this.bossPhase) {
-          this.bossPhase = true;
-          this.bossProgress -= this.bossThreshold; 
-          if (this.spawnTimer) this.spawnTimer.remove(); 
+        if (this.ai.level > oldLevel) {
+          const newChar = KOCH_SEQUENCE[this.ai.level - 1] || '';
+          this.showLevelUpBanner(this.ai.level, newChar);
         }
 
-        this.sessionStats.totalHits += 1; 
-        this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
-        ParticleFX.createExplosion(this, targetEnemy.x, targetEnemy.y);
-        
-        const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
-        
-        if (!isTraining) {
-          const oldLevel = this.ai.level;
-          this.ai.recordAttempt(key, reactionTime, true);
-          
-          if (this.ai.level > oldLevel) {
-            const newChar = KOCH_SEQUENCE[this.ai.level - 1] || '';
-            this.showLevelUpBanner(this.ai.level, newChar);
-          }
+        this.updateLevelHUD();
+        this.achievements.checkAchievements(this.sessionStats, this.ai.level);
+      }
 
-          this.updateLevelHUD();
-          this.achievements.checkAchievements(this.sessionStats, this.ai.level);
-        }
-
-        if (typeof targetEnemy.destroyShip === 'function') {
-           targetEnemy.destroyShip();
-        } else {
-           targetEnemy.destroy();
-        }
-        this.activeEnemies.shift();
-
-        if (this.activeEnemies.length > 0) this.playOldestEnemyCode();
+      if (typeof targetEnemy.destroyShip === 'function') {
+         targetEnemy.destroyShip();
       } else {
-        this.cameras.main.shake(100, 0.005);
-        this.sessionStats.totalErrors += 1;
-        this.updateCombo(false);
+         targetEnemy.destroy();
+      }
+      
+      // Usuwamy WŁAŚCIWY statek z tablicy
+      this.activeEnemies.splice(hitIndex, 1);
 
-        const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
-        if (!isTraining) {
-          this.ai.recordAttempt(targetEnemy.targetCharacter, reactionTime, false);
-        }
+      // Jeśli przypadkiem zestrzeliliśmy "najstarszy" (ten co właśnie gra), odpal kolejny
+      if (hitIndex === 0 && this.activeEnemies.length > 0) {
+        this.playOldestEnemyCode();
+      }
+    } else {
+      // Wciśnięto klawisz, którego W OGÓLE NIE MA na ekranie - PUDŁO!
+      const reactionTime = Date.now() - firstEnemy.spawnTime;
+      
+      this.cameras.main.shake(100, 0.005);
+      this.sessionStats.totalErrors += 1;
+      this.updateCombo(false);
+
+      const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
+      if (!isTraining) {
+        // Jako błąd przypisujemy literę najstarszego statku
+        this.ai.recordAttempt(firstEnemy.targetCharacter, reactionTime, false);
       }
     }
   }
