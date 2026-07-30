@@ -58,7 +58,7 @@ export class MenuScene extends Phaser.Scene {
     this.trainingMenuGroup.add(trainingTitle);
 
     this.trainingLevel = 5; 
-    const maxLevel = KOCH_SEQUENCE.length;
+    const maxKochLevel = KOCH_SEQUENCE.length;
 
     this.trainingLevelText = this.add.text(width / 2, height * 0.50, `KOCH LEVEL: ${this.trainingLevel}`, {
       fontFamily: 'monospace', fontSize: '20px', fill: '#00ff00'
@@ -72,7 +72,7 @@ export class MenuScene extends Phaser.Scene {
     });
 
     const plusKochBtn = this.createButton(width / 2 + 120, height * 0.50, ' [ + ] ', () => {
-      if (this.trainingLevel < maxLevel) {
+      if (this.trainingLevel < maxKochLevel) {
         this.trainingLevel++;
         this.trainingLevelText.setText(`KOCH LEVEL: ${this.trainingLevel}`);
       }
@@ -98,32 +98,47 @@ export class MenuScene extends Phaser.Scene {
 
     // Informacje o graczu na dole
     const highScore = this.profile.highScore || 0;
-    this.add.text(width / 2, height - 70, `HIGH SCORE: ${highScore}  |  CAMPAIGN KOCH LEVEL: ${this.profile.kochLevel || 2}`, {
+    const currentCampaignLevel = this.profile.kochLevel || 2;
+    this.add.text(width / 2, height - 70, `HIGH SCORE: ${highScore}  |  CAMPAIGN KOCH LEVEL: ${currentCampaignLevel}`, {
       fontFamily: 'monospace', fontSize: '16px', fill: '#00aa00'
     }).setOrigin(0.5, 0.5);
 
-    // WYŚWIETLANIE RANGI, ZNAKÓW ORAZ MINUT
+    // --- SYSTEM RANG I CZASU ---
     const totalHits = this.profile.lifetimeHits || 0;
-    const totalMinutes = Math.floor((this.profile.totalPlayTimeMs || 0) / 60000);
+    const totalPlayTimeMs = this.profile.totalPlayTimeMs || 0;
     
-    // Formatowanie czasu na godziny i minuty
+    // Formatowanie czasu (np. 1h 33min)
+    const totalMinutes = Math.floor(totalPlayTimeMs / 60000);
     const hours = Math.floor(totalMinutes / 60);
     const mins = totalMinutes % 60;
     const timeString = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
 
+    // Nowa logika rang bazująca na kampanii, a potem na godzinach
     let rank = "REKRUT";
-    if (totalHits >= 100) rank = "SZEREGOWY";
-    if (totalHits >= 200) rank = "KAPRAL";
-    if (totalHits >= 500) rank = "SIERŻANT";
-    if (totalHits >= 1000) rank = "PORUCZNIK";
-    if (totalHits >= 1500) rank = "KAPITAN";
-    if (totalHits >= 2000) rank = "MAJOR";
-    if (totalHits >= 3000) rank = "PUŁKOWNIK";
     
-    if (totalHits >= 4000) {
-      const rankLevel = Math.floor((totalHits - 3000) / 1000);
-      const eliteRanks = ['GENERAŁ', 'MARSZAŁEK', 'WETERAN CW', 'MISTRZ KLUCZA', 'LEGENDA ETERU', 'BÓG TELEGRAFU'];
-      rank = eliteRanks[Math.min(rankLevel - 1, eliteRanks.length - 1)];
+    // Rozkład podstawowych rang na ~40 poziomów Kocha
+    if (currentCampaignLevel >= 5) rank = "SZEREGOWY";
+    if (currentCampaignLevel >= 10) rank = "KAPRAL";
+    if (currentCampaignLevel >= 15) rank = "SIERŻANT";
+    if (currentCampaignLevel >= 20) rank = "PORUCZNIK";
+    if (currentCampaignLevel >= 25) rank = "KAPITAN";
+    if (currentCampaignLevel >= 30) rank = "MAJOR";
+    if (currentCampaignLevel >= 35) rank = "PUŁKOWNIK";
+    if (currentCampaignLevel >= maxKochLevel) rank = "GENERAŁ";
+
+    // Elitarne tytuły tylko dla graczy z wymaksowaną kampanią (według wylatanych godzin)
+    const totalHoursExact = totalPlayTimeMs / (1000 * 60 * 60);
+    if (currentCampaignLevel >= maxKochLevel) {
+      if (totalHoursExact >= 10) rank = "MARSZAŁEK";
+      if (totalHoursExact >= 20) rank = "WETERAN CW";
+      if (totalHoursExact >= 50) rank = "MISTRZ KLUCZA";
+      if (totalHoursExact >= 100) rank = "WIRTUOZ TELEGRAFII";
+      if (totalHoursExact >= 200) rank = "LEGENDA ETERU";
+      if (totalHoursExact >= 500) rank = "BÓG MORSE'A";
+      if (totalHoursExact >= 1000) rank = "STRAŻNIK PASMA";
+      if (totalHoursExact >= 2000) rank = "IMPERATOR CW";
+      if (totalHoursExact >= 5000) rank = "NIEŚMIERTELNY KLUCZNIK";
+      if (totalHoursExact >= 10000) rank = "ABSOLUT TELEGRAFII";
     }
 
     this.add.text(width / 2, height - 35, `[ RANGA: ${rank} | ZNAKI: ${totalHits} | WYLATANE: ${timeString} ]`, {
@@ -149,9 +164,8 @@ export class MenuScene extends Phaser.Scene {
       btn.setShadow(4, 0, '#ff00ff', 0, false, true); 
       btn.setText(label.replace('[', '>').replace(']', '<'));
 
-      // Używamy zdarzeń czasowych phasera zamiast tweenów, co jest bezpieczniejsze i daje lepszy efekt cięcia (glitch)
       btn.glitchTimer = this.time.addEvent({
-        delay: 50, // Bardzo szybka aktualizacja
+        delay: 50, 
         loop: true,
         callback: () => {
           if (Math.random() > 0.4) {
