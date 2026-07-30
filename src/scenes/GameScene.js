@@ -479,6 +479,9 @@ export class GameScene extends Phaser.Scene {
         }
       } else {
         await this.cwEngine.playCharacter(target.targetCharacter);
+// NOWA LINIJKA: Zapisujemy dokładny moment zakończenia nadawania litery
+        target.audioEndTime = Date.now();
+
       }
     } catch (e) {
       console.error(e);
@@ -574,10 +577,18 @@ export class GameScene extends Phaser.Scene {
     if (hitIndex !== -1) {
       // Trafienie prawidlowe - mnożnik rośnie
       const targetEnemy = this.activeEnemies[hitIndex];
-      const reactionTime = Date.now() - targetEnemy.spawnTime;
-
-// DODAJ TĘ LINIJKĘ:
-      this.sessionStats.totalReactionTime += reactionTime;
+      
+      // Na to:
+      let reactionTime = 0;
+      if (targetEnemy.audioEndTime) {
+          // Dźwięk się zakończył - liczymy czas od tego momentu
+          reactionTime = Date.now() - targetEnemy.audioEndTime;
+      } else {
+          // Ktoś był tak szybki (albo strzelał w ciemno), że trafił ZANIM dźwięk przestał grać.
+          // Wtedy dla zachowania logiki możemy przyjąć bardzo szybki czas bazujący na spawnie, albo np. uznać to za 0.
+          reactionTime = Date.now() - targetEnemy.spawnTime; 
+      }
+      this.sessionStats.totalReactionTime += Math.max(0, reactionTime); // Zabezpieczenie przed wartościami ujemnymi
 
       this.updateCombo(true); 
       this.playExplosionSound(); 
