@@ -183,20 +183,29 @@ export class GameScene extends Phaser.Scene {
 
   // --- NOWY LEJEK DLA DŹWIĘKÓW (ZAPOBIEGA NAKŁADANIU) ---
   requestAudioPlay() {
-    if (this.isPlayingAudio || this.isPaused || this.activeEnemies.length === 0) return;
+    // UWAGA: Usunięto z tego miejsca wczesne porzucanie żądania (if isPlayingAudio return),
+    // ponieważ zablokowane żądanie w fazie Bossa nigdy by nie wróciło.
+    
+    if (this.isPaused || this.activeEnemies.length === 0) return;
     
     if (this.audioDebounceTimer) {
       this.audioDebounceTimer.remove();
     }
     
-    // Jeśli kilka zdarzeń poprosi o audio w tym samym ułamku sekundy, to wywołanie złączy je w jedno
     this.audioDebounceTimer = this.time.delayedCall(50, () => {
-      if (!this.isPlayingAudio && !this.isPaused && this.activeEnemies.length > 0) {
+      // Jeśli inne audio nadal gra (np. trwa blokada 200ms po wcześniejszym trafieniu),
+      // nie porzucamy żądania w niepamięć, tylko zlecamy ponowne sprawdzenie.
+      if (this.isPlayingAudio) {
+        this.requestAudioPlay();
+        return;
+      }
+      
+      // Jeśli kanał jest wolny, puszczamy kod Morse'a
+      if (!this.isPaused && this.activeEnemies.length > 0) {
         this.playOldestEnemyCode();
       }
     });
   }
-
   playExplosionSound() {
     if (!this.sfxCtx) return;
     if (this.sfxCtx.state === 'suspended') this.sfxCtx.resume();
