@@ -28,7 +28,7 @@ export class GameScene extends Phaser.Scene {
     this.isPlayingAudio = false;
     this.isPaused = false;
     
-    this.sessionStats = { totalHits: 0, totalErrors: 0 };
+    this.sessionStats = { totalHits: 0, totalErrors: 0, totalReactionTime: 0 };
     
     this.comboCount = 0;
     this.multiplier = 1;
@@ -252,24 +252,29 @@ export class GameScene extends Phaser.Scene {
       }
       if (this.audioDebounceTimer) this.audioDebounceTimer.paused = true;
       
-// Obliczanie czasu...
       const activeSessionMs = Date.now() - this.sessionStartTime - this.totalPauseTime;
       const minutes = Math.floor(activeSessionMs / 60000);
       const seconds = Math.floor((activeSessionMs % 60000) / 1000);
 
-      // NOWE: Obliczanie procentu poprawnych odpowiedzi
+      // Obliczanie procentu poprawnych odpowiedzi
       const totalAttempts = this.sessionStats.totalHits + this.sessionMistakes;
       const accuracy = totalAttempts > 0 ? Math.round((this.sessionStats.totalHits / totalAttempts) * 100) : 0;
+
+      // NOWE: Obliczanie średniego czasu reakcji
+      const avgReaction = this.sessionStats.totalHits > 0 
+        ? Math.round(this.sessionStats.totalReactionTime / this.sessionStats.totalHits) 
+        : 0;
 
       // Zaktualizowany tekst pauzy
       this.pauseStatsText.setText(
         `WYNIK      : ${this.score}\n` +
         `CZAS SESJI : ${minutes} min ${seconds} sek\n` +
+        `REAKCJA    : ${avgReaction} ms\n` +
         `TRAFIONE   : ${this.sessionStats.totalHits}\n` +
         `POMYŁKI    : ${this.sessionMistakes}\n` +
         `CELNOŚĆ    : ${accuracy}%`
       );
-      
+
       this.pauseContainer.setVisible(true);
     } else {
       this.totalPauseTime += (Date.now() - this.pauseStartTime);
@@ -571,6 +576,9 @@ export class GameScene extends Phaser.Scene {
       const targetEnemy = this.activeEnemies[hitIndex];
       const reactionTime = Date.now() - targetEnemy.spawnTime;
 
+// DODAJ TĘ LINIJKĘ:
+      this.sessionStats.totalReactionTime += reactionTime;
+
       this.updateCombo(true); 
       this.playExplosionSound(); 
       
@@ -788,9 +796,15 @@ showSummaryScreen(titleText) {
     const totalAttempts = this.sessionStats.totalHits + this.sessionMistakes;
     const accuracy = totalAttempts > 0 ? Math.round((this.sessionStats.totalHits / totalAttempts) * 100) : 0;
 
+// Obliczanie średniego czasu reakcji
+    const avgReaction = this.sessionStats.totalHits > 0 
+      ? Math.round(this.sessionStats.totalReactionTime / this.sessionStats.totalHits) 
+      : 0;
+
     // Zaktualizowany tekst statystyk
     const statsText = `WYNIK      : ${this.score}\n` +
                       `CZAS SESJI : ${minutes} min ${seconds} sek\n` +
+                      `REAKCJA    : ${avgReaction} ms\n` +
                       `TRAFIONE   : ${this.sessionStats.totalHits}\n` +
                       `POMYŁKI    : ${this.sessionMistakes}\n` +
                       `CELNOŚĆ    : ${accuracy}%`;
