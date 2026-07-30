@@ -72,9 +72,6 @@ export class GameScene extends Phaser.Scene {
     this.playerProfile = SaveManager.load();
     this.ai = new AdaptiveLearner(this.playerProfile);
     this.achievements = new AchievementManager(this.playerProfile);
-
-    // Sprawdzamy początkową rangę przy starcie sceny
-    this.currentRank = this.getRankName(this.playerProfile.kochLevel || 2, this.playerProfile.totalPlayTimeMs || 0);
     
     if (this.gameMode === 'training_numbers') {
       this.customTargetSequence = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', ',', '?', '/'];
@@ -184,34 +181,20 @@ export class GameScene extends Phaser.Scene {
     this.setupMobileKeyboardInput();
   }
 
-  // --- LOGIKA OBLICZANIA RANGI ---
-  getRankName(level, totalPlayTimeMs) {
-    const maxKochLevel = KOCH_SEQUENCE.length; 
-    let rank = "REKRUT";
+  // --- NOWY LEJEK DLA DŹWIĘKÓW (ZAPOBIEGA NAKŁADANIU) ---
+  requestAudioPlay() {
+    if (this.isPlayingAudio || this.isPaused || this.activeEnemies.length === 0) return;
     
-    if (level >= 5) rank = "SZEREGOWY";
-    if (level >= 10) rank = "KAPRAL";
-    if (level >= 15) rank = "SIERŻANT";
-    if (level >= 20) rank = "PORUCZNIK";
-    if (level >= 25) rank = "KAPITAN";
-    if (level >= 30) rank = "MAJOR";
-    if (level >= 35) rank = "PUŁKOWNIK";
-    if (level >= maxKochLevel) rank = "GENERAŁ";
-
-    if (level >= maxKochLevel) {
-      const totalHoursExact = totalPlayTimeMs / (1000 * 60 * 60);
-      if (totalHoursExact >= 10) rank = "MARSZAŁEK";
-      if (totalHoursExact >= 20) rank = "WETERAN CW";
-      if (totalHoursExact >= 50) rank = "MISTRZ KLUCZA";
-      if (totalHoursExact >= 100) rank = "WIRTUOZ TELEGRAFII";
-      if (totalHoursExact >= 200) rank = "LEGENDA ETERU";
-      if (totalHoursExact >= 500) rank = "BÓG MORSE'A";
-      if (totalHoursExact >= 1000) rank = "STRAŻNIK PASMA";
-      if (totalHoursExact >= 2000) rank = "IMPERATOR CW";
-      if (totalHoursExact >= 5000) rank = "NIEŚMIERTELNY KLUCZNIK";
-      if (totalHoursExact >= 10000) rank = "ABSOLUT TELEGRAFII";
+    if (this.audioDebounceTimer) {
+      this.audioDebounceTimer.remove();
     }
-    return rank;
+    
+    // Jeśli kilka zdarzeń poprosi o audio w tym samym ułamku sekundy, to wywołanie złączy je w jedno
+    this.audioDebounceTimer = this.time.delayedCall(50, () => {
+      if (!this.isPlayingAudio && !this.isPaused && this.activeEnemies.length > 0) {
+        this.playOldestEnemyCode();
+      }
+    });
   }
 
   playExplosionSound() {
@@ -258,6 +241,7 @@ export class GameScene extends Phaser.Scene {
       if (this.activeEnemies.length > 0 && this.activeEnemies[0].isBoss && this.activeEnemies[0].bossAudioTimer) {
         this.activeEnemies[0].bossAudioTimer.paused = true;
       }
+      if (this.audioDebounceTimer) this.audioDebounceTimer.paused = true;
       
       const activeSessionMs = Date.now() - this.sessionStartTime - this.totalPauseTime;
       const minutes = Math.floor(activeSessionMs / 60000);
@@ -271,13 +255,14 @@ export class GameScene extends Phaser.Scene {
       
       this.physics.resume();
       if (this.spawnTimer) this.spawnTimer.paused = false;
+      if (this.audioDebounceTimer) this.audioDebounceTimer.paused = false;
       
       if (this.activeEnemies.length > 0) {
         const target = this.activeEnemies[0];
         if (target.isBoss && target.bossAudioTimer) {
           target.bossAudioTimer.paused = false;
-        } else if (!this.isPlayingAudio) {
-          this.playOldestEnemyCode();
+        } else {
+          this.requestAudioPlay();
         }
       }
     }
@@ -391,9 +376,8 @@ export class GameScene extends Phaser.Scene {
     enemy.body.setVelocityY(fixedSpeed); 
     this.activeEnemies.push(enemy);
 
-    if (!this.isPlayingAudio && !this.isPaused) {
-      this.playOldestEnemyCode();
-    }
+    // Zamiast bezwarunkowo grać kod, wysyłamy zapytanie do bufora (który przepuści to dalej tylko jeśli nic nie gra)
+    this.requestAudioPlay();
   }
 
   // --- LOGIKA BOSSA ---
@@ -436,9 +420,7 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5, 0.5);
     boss.bossTextObj.setDepth(50);
 
-    if (!this.isPlayingAudio && !this.isPaused) {
-      this.playOldestEnemyCode();
-    }
+    this.requestAudioPlay();
   }
 
   endBossPhase() {
@@ -474,8 +456,13 @@ export class GameScene extends Phaser.Scene {
     } catch (e) {
       console.error(e);
     } finally {
-      this.isPlayingAudio = false;
+      // Miękka blokada – trzymamy zamek jeszcze przez ułamek sekundy po zakończeniu, 
+      // żeby absolutnie wykluczyć szybkie API z nakładaniem się obwiedni w Web Audio API.
+      this.time.delayedCall(200, () => {
+         this.isPlayingAudio = false;
+      });
 
+      // PĘTLA DŹWIĘKOWA BOSSA CO 3 SEKUNDY
       if (target.isBoss && this.activeEnemies.includes(target)) {
         if (target.bossAudioTimer) target.bossAudioTimer.remove();
         
@@ -491,11 +478,13 @@ export class GameScene extends Phaser.Scene {
   handleInput(event) {
     if (this.isPaused) return;
 
+    // Blokada anti-spam dla klawiatury fizycznej (przytrzymanie klawisza)
     if (event && event.repeat) return;
 
     const key = (event.key || '').toUpperCase();
     if (!/^[A-Z0-9.\/,?]$/.test(key)) return;
 
+    // Blokada przed duplikowaniem inputów (np. klawiatura fizyczna uderza razem ze skryptem mobile)
     const now = Date.now();
     if (this.lastInputTime && (now - this.lastInputTime < 60) && this.lastInputKey === key) {
       return; 
@@ -533,7 +522,7 @@ export class GameScene extends Phaser.Scene {
           this.activeEnemies.shift();
           this.endBossPhase();
           
-          if (this.activeEnemies.length > 0) this.playOldestEnemyCode();
+          if (this.activeEnemies.length > 0) this.requestAudioPlay();
         }
       } else {
         this.cameras.main.shake(100, 0.005);
@@ -545,6 +534,7 @@ export class GameScene extends Phaser.Scene {
     let hitIndex = -1;
     let lowestY = -Infinity;
     
+    // Szukamy pasującej litery – priorytet ma statek znajdujący się najniżej na ekranie
     for (let i = 0; i < this.activeEnemies.length; i++) {
       if (this.activeEnemies[i].targetCharacter === key) {
         if (this.activeEnemies[i].y > lowestY) {
@@ -555,6 +545,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (hitIndex !== -1) {
+      // Trafienie prawidlowe - mnożnik rośnie
       const targetEnemy = this.activeEnemies[hitIndex];
       const reactionTime = Date.now() - targetEnemy.spawnTime;
 
@@ -595,14 +586,16 @@ export class GameScene extends Phaser.Scene {
       
       this.activeEnemies.splice(hitIndex, 1);
 
+      // Jeżeli zestrzeliliśmy "najstarszego", to żądamy puszczenia dźwięku dla nowego najstarszego
       if (hitIndex === 0 && this.activeEnemies.length > 0) {
-        this.playOldestEnemyCode();
+        this.requestAudioPlay();
       }
     } else {
+      // BŁĄD PUDŁO: Wciśnięto przycisk, którego nie ma aktualnie na planszy
       const reactionTime = Date.now() - firstEnemy.spawnTime;
       this.cameras.main.shake(100, 0.005);
       this.sessionStats.totalErrors += 1;
-      this.updateCombo(false);
+      this.updateCombo(false); // Zerowanie mnożnika
 
       const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
       if (!isTraining) {
@@ -633,46 +626,6 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.time.delayedCall(3000, () => {
-      this.tweens.add({
-        targets: [bannerText, subText], alpha: 0, duration: 200,
-        onComplete: () => {
-          this.tweens.add({
-            targets: bannerBg, scaleY: 0, duration: 250,
-            onComplete: () => {
-              bannerBg.destroy(); bannerText.destroy(); subText.destroy();
-            }
-          });
-        }
-      });
-    });
-  }
-
-  // --- NOWY BANER AWANSU RANGI ---
-  showRankUpBanner(newRank) {
-    const { width, height } = this.cameras.main;
-    
-    const bannerBg = this.add.rectangle(width / 2, height / 2 - 80, width, 100, 0x111100, 0.95).setOrigin(0.5, 0.5);
-    bannerBg.setStrokeStyle(4, 0xffff00);
-    bannerBg.setDepth(200);
-
-    const bannerText = this.add.text(width / 2, height / 2 - 100, `AWANS!`, {
-      fontFamily: 'monospace', fontSize: '28px', fill: '#ffff00', fontStyle: 'bold', align: 'center'
-    }).setOrigin(0.5, 0.5).setDepth(200);
-
-    const subText = this.add.text(width / 2, height / 2 - 60, `NOWA RANGA: [ ${newRank} ]`, {
-      fontFamily: 'monospace', fontSize: '24px', fill: '#ffffff', align: 'center'
-    }).setOrigin(0.5, 0.5).setDepth(200);
-
-    bannerBg.setScale(1, 0);
-    bannerText.setAlpha(0);
-    subText.setAlpha(0);
-
-    this.tweens.add({
-      targets: bannerBg, scaleY: 1, duration: 300, ease: 'Back.out',
-      onComplete: () => { this.tweens.add({ targets: [bannerText, subText], alpha: 1, duration: 200 }); }
-    });
-
-    this.time.delayedCall(4000, () => {
       this.tweens.add({
         targets: [bannerText, subText], alpha: 0, duration: 200,
         onComplete: () => {
@@ -737,15 +690,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.playerProfile.totalPlayTimeMs = (this.playerProfile.totalPlayTimeMs || 0) + activePlayTimeSinceLastSave;
     this.lastSaveTime = now;
-    
     SaveManager.save(this.playerProfile);
-
-    // Sprawdzenie, czy zaktualizowano rangę
-    const newRank = this.getRankName(this.playerProfile.kochLevel || 2, this.playerProfile.totalPlayTimeMs);
-    if (this.currentRank && newRank !== this.currentRank) {
-      this.showRankUpBanner(newRank);
-      this.currentRank = newRank;
-    }
   }
 
   updateLevelHUD() {
@@ -793,6 +738,7 @@ export class GameScene extends Phaser.Scene {
 
   exitToMenu() {
     globalEventBus.off('ACHIEVEMENT_UNLOCKED', this.showAchievementNotification, this);
+    if (this.audioDebounceTimer) this.audioDebounceTimer.remove();
     this.saveProgress();
     this.scene.start(SCENES.MENU);
   }
@@ -802,6 +748,7 @@ export class GameScene extends Phaser.Scene {
     this.saveProgress();
     this.physics.pause();
     if (this.spawnTimer) this.spawnTimer.remove();
+    if (this.audioDebounceTimer) this.audioDebounceTimer.remove();
     this.input.keyboard.off('keydown');
     this.input.keyboard.off('keydown-ESC');
 
