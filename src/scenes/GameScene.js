@@ -220,11 +220,9 @@ export class GameScene extends Phaser.Scene {
     if (this.isPaused) {
       this.pauseStartTime = Date.now();
       this.physics.pause();
-      if (this.spawnTimer) this.spawnTimer.paused = true;
       
-      if (this.activeEnemies.length > 0 && this.activeEnemies[0].isBoss && this.activeEnemies[0].bossAudioTimer) {
-        this.activeEnemies[0].bossAudioTimer.paused = true;
-      }
+      if (this.spawnTimer) this.spawnTimer.paused = true;
+      if (this.generalAudioTimer) this.generalAudioTimer.paused = true;
       
       const activeSessionMs = Date.now() - this.sessionStartTime - this.totalPauseTime;
       const minutes = Math.floor(activeSessionMs / 60000);
@@ -238,14 +236,10 @@ export class GameScene extends Phaser.Scene {
       
       this.physics.resume();
       if (this.spawnTimer) this.spawnTimer.paused = false;
+      if (this.generalAudioTimer) this.generalAudioTimer.paused = false;
       
-      if (this.activeEnemies.length > 0) {
-        const target = this.activeEnemies[0];
-        if (target.isBoss && target.bossAudioTimer) {
-          target.bossAudioTimer.paused = false;
-        } else if (!this.isPlayingAudio) {
-          this.playOldestEnemyCode();
-        }
+      if (this.activeEnemies.length > 0 && !this.isPlayingAudio) {
+        this.playOldestEnemyCode();
       }
     }
   }
@@ -294,7 +288,6 @@ export class GameScene extends Phaser.Scene {
       if (enemy.y >= this.defenseLineY) {
         if (enemy.isBoss) {
           // Boss ucieka - zdejmujemy go z ekranu bez kary
-          if (enemy.bossAudioTimer) enemy.bossAudioTimer.remove();
           if (enemy.bossTextObj) enemy.bossTextObj.destroy();
           enemy.destroy();
           this.activeEnemies.splice(i, 1);
@@ -417,7 +410,6 @@ export class GameScene extends Phaser.Scene {
     this.isBossActive = false;
     this.time.delayedCall(2000, () => {
       this.scheduleNextSpawn();
-      // Od razu wypuszczamy wroga, żeby nie tracić czasu
       if (this.activeEnemies.length === 0 && !this.isPaused) {
         this.spawnEnemy();
       }
@@ -428,6 +420,7 @@ export class GameScene extends Phaser.Scene {
     if (this.activeEnemies.length === 0 || this.isPaused) return;
     if (this.isPlayingAudio) return; 
     
+    if (this.generalAudioTimer) this.generalAudioTimer.remove();
     this.isPlayingAudio = true;
     const target = this.activeEnemies[0];
     
@@ -449,12 +442,15 @@ export class GameScene extends Phaser.Scene {
     } finally {
       this.isPlayingAudio = false;
 
-      // PĘTLA DŹWIĘKOWA BOSSA CO 3 SEKUNDY
-      if (target.isBoss && this.activeEnemies.includes(target)) {
-        if (target.bossAudioTimer) target.bossAudioTimer.remove();
+      // UNIWERSALNA PĘTLA DŹWIĘKOWA DLA WSZYSTKICH STATKÓW
+      // Powoduje stałe powtarzanie kodu, nawet po zatrzymaniu spawnu
+      if (this.activeEnemies.length > 0 && !this.isPaused) {
+        const nextTarget = this.activeEnemies[0];
+        const delay = nextTarget.isBoss ? 3000 : 1500;
         
-        target.bossAudioTimer = this.time.delayedCall(3000, () => {
-          if (this.activeEnemies.includes(target) && !this.isPaused) {
+        if (this.generalAudioTimer) this.generalAudioTimer.remove();
+        this.generalAudioTimer = this.time.delayedCall(delay, () => {
+          if (this.activeEnemies.length > 0 && !this.isPaused) {
              this.playOldestEnemyCode();
           }
         });
@@ -465,13 +461,13 @@ export class GameScene extends Phaser.Scene {
   handleInput(event) {
     if (this.isPaused) return;
 
-    // 1. Zabezpieczenie przed trzymaniem klawisza (auto-repeat) na PC
+    // Zabezpieczenie przed trzymaniem klawisza (auto-repeat)
     if (event && event.repeat) return;
 
     const key = (event.key || '').toUpperCase();
     if (!/^[A-Z0-9.\/,?]$/.test(key)) return;
 
-    // 2. KLUCZOWE: Zabezpieczenie przed podwójnym sygnałem (keydown z PC + input z mobile-fix)
+    // Zabezpieczenie przed podwójnym sygnałem z klawiatury fizycznej na mobile
     const now = Date.now();
     if (this.lastInputTime && (now - this.lastInputTime < 60) && this.lastInputKey === key) {
       return; 
@@ -494,40 +490,38 @@ export class GameScene extends Phaser.Scene {
         ParticleFX.createExplosion(this, firstEnemy.x, firstEnemy.y);
 
         if (firstEnemy.remainingWord.length === 0) {
-          // BOSS ZABITY - Nagroda tylko punktowa (+10000)
-          if (firstEnemy.bossAudioTimer) firstEnemy.bossAudioTimer.remove();
+          // BOSS ZABITY - Nagroda punktowa
+          if (this.generalAudioTimer) this.generalAudioTimer.remove();
           
           this.playExplosionSound();
           this.score += 10000;
-          
           this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
           ParticleFX.createExplosion(this, firstEnemy.x, firstEnemy.y);
           
           if (firstEnemy.bossTextObj) firstEnemy.bossTextObj.destroy();
-          
-          if (typeof firstEnemy.destroyShip === 'function') {
-             firstEnemy.destroyShip();
-          } else {
-             firstEnemy.destroy();
-          }
+          if (typeof firstEnemy.destroyShip === 'function') firstEnemy.destroyShip();
+          else firstEnemy.destroy();
           
           this.activeEnemies.shift();
           this.endBossPhase();
           
-          if (this.activeEnemies.length > 0) this.playOldestEnemyCode();
+          if (this.activeEnemies.length > 0) {
+             this.isPlayingAudio = false;
+             this.playOldestEnemyCode();
+          }
         }
       } else {
-        // BŁĄD NA BOSSIE: Trzęsienie ekranu, brak utraty mnożnika i życia
+        // BŁĄD NA BOSSIE: Tylko trzęsienie ekranu
         this.cameras.main.shake(100, 0.005);
       }
       return; 
     }
 
     // --- LOGIKA ZWYKŁYCH STATKÓW ---
-    // Szukamy dowolnego statku z tą literą na ekranie, zaczynając od najniższego
     let hitIndex = -1;
     let lowestY = -Infinity;
     
+    // Szukamy statku, na którym widnieje wciśnięta litera. Jeśli jest ich kilka, uderzamy w najniższy
     for (let i = 0; i < this.activeEnemies.length; i++) {
       if (this.activeEnemies[i].targetCharacter === key) {
         if (this.activeEnemies[i].y > lowestY) {
@@ -538,7 +532,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (hitIndex !== -1) {
-      // Trafiliśmy w JEDEN Z OBECNYCH NA EKRANIE znaków
+      // TRAFIENIE: Właśnie ustrzeliliśmy literę widoczną na ekranie!
       const targetEnemy = this.activeEnemies[hitIndex];
       const reactionTime = Date.now() - targetEnemy.spawnTime;
 
@@ -574,21 +568,19 @@ export class GameScene extends Phaser.Scene {
         this.achievements.checkAchievements(this.sessionStats, this.ai.level);
       }
 
-      if (typeof targetEnemy.destroyShip === 'function') {
-         targetEnemy.destroyShip();
-      } else {
-         targetEnemy.destroy();
-      }
+      if (typeof targetEnemy.destroyShip === 'function') targetEnemy.destroyShip();
+      else targetEnemy.destroy();
       
-      // Usuwamy WŁAŚCIWY statek z tablicy
       this.activeEnemies.splice(hitIndex, 1);
 
-      // Jeśli przypadkiem zestrzeliliśmy "najstarszy" (ten co właśnie gra), odpal kolejny
+      // Jeśli "zabiliśmy" najstarszy statek, wymuś natychmiastowe odświeżenie dźwięku
       if (hitIndex === 0 && this.activeEnemies.length > 0) {
+        if (this.generalAudioTimer) this.generalAudioTimer.remove();
+        this.isPlayingAudio = false;
         this.playOldestEnemyCode();
       }
     } else {
-      // Wciśnięto klawisz, którego W OGÓLE NIE MA na ekranie - PUDŁO!
+      // PUDŁO - Gracz wcisnął klawisz, którego NIE MA na żadnym statku na ekranie
       const reactionTime = Date.now() - firstEnemy.spawnTime;
       
       this.cameras.main.shake(100, 0.005);
@@ -597,7 +589,6 @@ export class GameScene extends Phaser.Scene {
 
       const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
       if (!isTraining) {
-        // Jako błąd przypisujemy literę najstarszego statku
         this.ai.recordAttempt(firstEnemy.targetCharacter, reactionTime, false);
       }
     }
@@ -703,11 +694,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   clearEnemies() {
+    if (this.generalAudioTimer) this.generalAudioTimer.remove();
     for (const enemy of this.activeEnemies) {
-      if (enemy.isBoss) {
-        if (enemy.bossAudioTimer) enemy.bossAudioTimer.remove();
-        if (enemy.bossTextObj) enemy.bossTextObj.destroy();
-      }
+      if (enemy.isBoss && enemy.bossTextObj) enemy.bossTextObj.destroy();
       if (enemy && enemy.destroy) enemy.destroy();
     }
     this.activeEnemies = [];
@@ -737,6 +726,7 @@ export class GameScene extends Phaser.Scene {
 
   exitToMenu() {
     globalEventBus.off('ACHIEVEMENT_UNLOCKED', this.showAchievementNotification, this);
+    if (this.generalAudioTimer) this.generalAudioTimer.remove();
     this.saveProgress();
     this.scene.start(SCENES.MENU);
   }
@@ -746,6 +736,7 @@ export class GameScene extends Phaser.Scene {
     this.saveProgress();
     this.physics.pause();
     if (this.spawnTimer) this.spawnTimer.remove();
+    if (this.generalAudioTimer) this.generalAudioTimer.remove();
     this.input.keyboard.off('keydown');
     this.input.keyboard.off('keydown-ESC');
 
