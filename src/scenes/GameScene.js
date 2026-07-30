@@ -252,11 +252,24 @@ export class GameScene extends Phaser.Scene {
       }
       if (this.audioDebounceTimer) this.audioDebounceTimer.paused = true;
       
+// Obliczanie czasu...
       const activeSessionMs = Date.now() - this.sessionStartTime - this.totalPauseTime;
       const minutes = Math.floor(activeSessionMs / 60000);
       const seconds = Math.floor((activeSessionMs % 60000) / 1000);
 
-      this.pauseStatsText.setText(`CZAS SESJI : ${minutes} min ${seconds} sek\nTRAFIONE   : ${this.sessionStats.totalHits}\nPOMYŁKI    : ${this.sessionMistakes}`);
+      // NOWE: Obliczanie procentu poprawnych odpowiedzi
+      const totalAttempts = this.sessionStats.totalHits + this.sessionMistakes;
+      const accuracy = totalAttempts > 0 ? Math.round((this.sessionStats.totalHits / totalAttempts) * 100) : 0;
+
+      // Zaktualizowany tekst pauzy
+      this.pauseStatsText.setText(
+        `WYNIK      : ${this.score}\n` +
+        `CZAS SESJI : ${minutes} min ${seconds} sek\n` +
+        `TRAFIONE   : ${this.sessionStats.totalHits}\n` +
+        `POMYŁKI    : ${this.sessionMistakes}\n` +
+        `CELNOŚĆ    : ${accuracy}%`
+      );
+      
       this.pauseContainer.setVisible(true);
     } else {
       this.totalPauseTime += (Date.now() - this.pauseStartTime);
@@ -752,7 +765,7 @@ export class GameScene extends Phaser.Scene {
     this.scene.start(SCENES.MENU);
   }
 
-  showSummaryScreen(titleText) {
+showSummaryScreen(titleText) {
     globalEventBus.off('ACHIEVEMENT_UNLOCKED', this.showAchievementNotification, this);
     this.saveProgress();
     this.physics.pause();
@@ -770,7 +783,17 @@ export class GameScene extends Phaser.Scene {
     const activeSessionMs = Date.now() - this.sessionStartTime - this.totalPauseTime;
     const minutes = Math.floor(activeSessionMs / 60000);
     const seconds = Math.floor((activeSessionMs % 60000) / 1000);
-    const statsText = `CZAS SESJI : ${minutes} min ${seconds} sek\nTRAFIONE   : ${this.sessionStats.totalHits}\nPOMYŁKI    : ${this.sessionMistakes}`;
+    
+    // Obliczanie procentu poprawnych odpowiedzi
+    const totalAttempts = this.sessionStats.totalHits + this.sessionMistakes;
+    const accuracy = totalAttempts > 0 ? Math.round((this.sessionStats.totalHits / totalAttempts) * 100) : 0;
+
+    // Zaktualizowany tekst statystyk
+    const statsText = `WYNIK      : ${this.score}\n` +
+                      `CZAS SESJI : ${minutes} min ${seconds} sek\n` +
+                      `TRAFIONE   : ${this.sessionStats.totalHits}\n` +
+                      `POMYŁKI    : ${this.sessionMistakes}\n` +
+                      `CELNOŚĆ    : ${accuracy}%`;
 
     this.add.text(width / 2, height / 2, statsText, {
       fontFamily: 'monospace', fontSize: '24px', fill: '#00ff00', align: 'left', lineSpacing: 15
@@ -784,7 +807,7 @@ export class GameScene extends Phaser.Scene {
     returnBtn.on('pointerout', () => returnBtn.setFill('#ffffff'));
     returnBtn.on('pointerdown', () => this.scene.start(SCENES.MENU));
   }
-
+  
   gameOver() {
     this.showSummaryScreen('GAME OVER');
   }
