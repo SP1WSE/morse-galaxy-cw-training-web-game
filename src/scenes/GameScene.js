@@ -155,7 +155,7 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5, 0.5));
 
     this.pauseStatsText = this.add.text(width / 2, height / 2, '', {
-      fontFamily: 'monospace', fontSize: '24px', fill: '#00ff00', align: 'left', lineSpacing: 15
+      fontFamily: 'monospace', fontSize: '24px', fill: '#00ff00', align: 'left', lineSpacing: 10
     }).setOrigin(0.5, 0.5);
     this.pauseContainer.add(this.pauseStatsText);
 
@@ -810,7 +810,7 @@ showSummaryScreen(titleText) {
                       `CELNOŚĆ    : ${accuracy}%`;
 
     this.add.text(width / 2, height / 2, statsText, {
-      fontFamily: 'monospace', fontSize: '24px', fill: '#00ff00', align: 'left', lineSpacing: 15
+      fontFamily: 'monospace', fontSize: '24px', fill: '#00ff00', align: 'left', lineSpacing: 10
     }).setOrigin(0.5, 0.5);
 
     const returnBtn = this.add.text(width / 2, height / 2 + 120, '[ POWRÓT DO MENU ]', {
