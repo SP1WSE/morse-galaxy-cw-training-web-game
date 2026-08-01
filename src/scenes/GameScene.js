@@ -114,6 +114,16 @@ export class GameScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '24px', fill: '#00ff00'
     });
     
+    // --- NOWE ZMIENNE UI ---
+    this.timeText = this.add.text(20, 55, `TIME: 0:00`, {
+      fontFamily: 'monospace', fontSize: '20px', fill: '#00aa00'
+    });
+
+    this.accuracyText = this.add.text(width - 150, 55, `ACCURACY: 100%`, {
+      fontFamily: 'monospace', fontSize: '20px', fill: '#00aa00'
+    });
+    // -----------------------
+
     let modeLabel = `KOCH LEVEL: ${this.ai.level}`;
     if (this.gameMode === 'training_numbers') {
       modeLabel = 'NUMBERS & PROSIGNS';
@@ -325,6 +335,17 @@ export class GameScene extends Phaser.Scene {
   update() {
     if (this.isPaused) return;
 
+  // --- AKTUALIZACJA CZASU I CELNOŚCI NA ŻYWO ---
+    const activeSessionMs = Date.now() - this.sessionStartTime - this.totalPauseTime;
+    const minutes = Math.floor(activeSessionMs / 60000);
+    const seconds = Math.floor((activeSessionMs % 60000) / 1000);
+    this.timeText.setText(`TIME: ${minutes}:${seconds.toString().padStart(2, '0')}`);
+
+    const totalAttempts = this.sessionStats.totalHits + this.sessionMistakes;
+    const accuracy = totalAttempts > 0 ? Math.round((this.sessionStats.totalHits / totalAttempts) * 100) : 100;
+    this.accuracyText.setText(`ACCURACY: ${accuracy}%`);
+    // ---------------------------------------------
+
     this.bgStarsSlow.tilePositionY -= 0.2;
     this.bgStarsFast.tilePositionY -= 0.8;
 
@@ -513,7 +534,7 @@ async playOldestEnemyCode() {
       }
     }
   }
-  
+
   handleInput(event) {
     if (this.isPaused) return;
 
