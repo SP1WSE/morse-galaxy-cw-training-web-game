@@ -461,12 +461,21 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  async playOldestEnemyCode() {
+async playOldestEnemyCode() {
     if (this.activeEnemies.length === 0 || this.isPaused) return;
     if (this.isPlayingAudio) return; 
     
-    this.isPlayingAudio = true;
     const target = this.activeEnemies[0];
+    
+    // --- NOWY WARUNEK ZAPOBIEGAJĄCY PODWÓJNEMU ODTWARZANIU ---
+    // Jeśli statek już raz się odezwał (i nie jest Bossem), ignorujemy żądanie.
+    if (target.hasPlayedAudio && !target.isBoss) {
+      return;
+    }
+    // Zaznaczamy, że ten statek właśnie został obsłużony
+    target.hasPlayedAudio = true;
+    
+    this.isPlayingAudio = true;
     
     try {
       if (target.isBoss) {
@@ -479,9 +488,9 @@ export class GameScene extends Phaser.Scene {
         }
       } else {
         await this.cwEngine.playCharacter(target.targetCharacter);
-// NOWA LINIJKA: Zapisujemy dokładny moment zakończenia nadawania litery
+        
+        // Zapisujemy dokładny moment zakończenia nadawania litery (do wyliczania czasu reakcji)
         target.audioEndTime = Date.now();
-
       }
     } catch (e) {
       console.error(e);
@@ -504,7 +513,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
   }
-
+  
   handleInput(event) {
     if (this.isPaused) return;
 
