@@ -32,7 +32,9 @@ export class GameScene extends Phaser.Scene {
     
     this.comboCount = 0;
     this.multiplier = 1;
+    // Na:
     this.sessionMistakes = 0;
+    this.sessionMistakesMap = {}; // Słownik: { 'A': 2, 'B': 1 }
     
     this.gameMode = data && data.mode ? data.mode : 'campaign';
     this.selectedTrainingLevel = data && data.level ? data.level : 5;
@@ -160,7 +162,7 @@ export class GameScene extends Phaser.Scene {
     
     this.pauseContainer.add(this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9).setOrigin(0.5, 0.5));
     
-    this.pauseContainer.add(this.add.text(width / 2, height / 2 - 120, 'PAUSED', {
+    this.pauseContainer.add(this.add.text(width / 2, height / 2 - 200, 'PAUSED', {
       fontFamily: 'monospace', fontSize: '48px', fill: '#ffff00', fontStyle: 'bold'
     }).setOrigin(0.5, 0.5));
 
@@ -169,7 +171,7 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5, 0.5);
     this.pauseContainer.add(this.pauseStatsText);
 
-    const endMissionBtn = this.add.text(width / 2, height / 2 + 120, '[ END MISSION & BACK TO MAIN MENU ]', {
+    const endMissionBtn = this.add.text(width / 2, height / 2 + 200, '[ END MISSION & BACK TO MAIN MENU ]', {
       fontFamily: 'monospace', fontSize: '24px', fill: '#ffffff'
     }).setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
 
@@ -277,12 +279,13 @@ export class GameScene extends Phaser.Scene {
 
       // Zaktualizowany tekst pauzy
       this.pauseStatsText.setText(
-        `WYNIK      : ${this.score}\n` +
-        `CZAS SESJI : ${minutes} min ${seconds} sek\n` +
-        `REAKCJA    : ${avgReaction} ms\n` +
-        `TRAFIONE   : ${this.sessionStats.totalHits}\n` +
-        `POMYŁKI    : ${this.sessionMistakes}\n` +
-        `CELNOŚĆ    : ${accuracy}%`
+        `SCORE        : ${this.score}\n` +
+        `SESSION TIME : ${minutes}m ${seconds}s\n` +
+        `AVG REACTION : ${avgReaction} ms\n` +
+        `HITS         : ${this.sessionStats.totalHits}\n` +
+        `ERRORS       : ${this.sessionMistakes}\n` +
+        `MOST MISSED  : ${this.getTopMistakesText()}\n` +
+        `ACCURACY     : ${accuracy}%`
       );
 
       this.pauseContainer.setVisible(true);
@@ -303,6 +306,17 @@ export class GameScene extends Phaser.Scene {
         }
       }
     }
+  }
+
+  getTopMistakesText(limit = 3) {
+    const entries = Object.entries(this.sessionMistakesMap || {});
+    if (entries.length === 0) return 'NONE';
+
+    return entries
+      .sort((a, b) => b[1] - a[1]) // Sortujemy od największej liczby błędów
+      .slice(0, limit)
+      .map(([char, count]) => `${char} (${count}x)`)
+      .join(', ');
   }
 
   updateCombo(isHit) {
@@ -668,6 +682,13 @@ async playOldestEnemyCode() {
       this.sessionStats.totalErrors += 1;
       this.updateCombo(false); // Zerowanie mnożnika
 
+    // --- NOWA LINIJKA: Zliczamy konkretną pomyloną literę ---
+      const expectedChar = firstEnemy.targetCharacter;
+      if (expectedChar) {
+        this.sessionMistakesMap[expectedChar] = (this.sessionMistakesMap[expectedChar] || 0) + 1;
+      }
+      // --------------------------------------------------------
+
       const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
       if (!isTraining) {
         this.ai.recordAttempt(firstEnemy.targetCharacter, reactionTime, false);
@@ -825,7 +846,7 @@ showSummaryScreen(titleText) {
 
     const { width, height } = this.cameras.main;
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.9).setOrigin(0.5, 0.5);
-    this.add.text(width / 2, height / 2 - 120, titleText, {
+    this.add.text(width / 2, height / 2 - 200, titleText, {
       fontFamily: 'monospace', fontSize: '48px', fill: (titleText === 'GAME OVER' ? '#ff0000' : '#ffff00'), fontStyle: 'bold'
     }).setOrigin(0.5, 0.5);
 
@@ -843,18 +864,20 @@ showSummaryScreen(titleText) {
       : 0;
 
     // Zaktualizowany tekst statystyk
-    const statsText = `WYNIK      : ${this.score}\n` +
-                      `CZAS SESJI : ${minutes} min ${seconds} sek\n` +
-                      `REAKCJA    : ${avgReaction} ms\n` +
-                      `TRAFIONE   : ${this.sessionStats.totalHits}\n` +
-                      `POMYŁKI    : ${this.sessionMistakes}\n` +
-                      `CELNOŚĆ    : ${accuracy}%`;
+    const statsText = 
+      `SCORE      : ${this.score}\n` +
+      `SESSION TIME: ${minutes}m ${seconds}s\n` +
+      `AVG REACTION : ${avgReaction} ms\n` +
+      `HITS        : ${this.sessionStats.totalHits}\n` +
+      `ERRORS      : ${this.sessionMistakes}\n` +
+      `MOST MISSED : ${this.getTopMistakesText()}\n` +
+      `ACCURACY    : ${accuracy}%`;
 
     this.add.text(width / 2, height / 2, statsText, {
       fontFamily: 'monospace', fontSize: '24px', fill: '#00ff00', align: 'left', lineSpacing: 10
     }).setOrigin(0.5, 0.5);
 
-    const returnBtn = this.add.text(width / 2, height / 2 + 120, '[ POWRÓT DO MENU ]', {
+    const returnBtn = this.add.text(width / 2, height / 2 + 200, '[ POWRÓT DO MENU ]', {
       fontFamily: 'monospace', fontSize: '24px', fill: '#ffffff'
     }).setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
 
