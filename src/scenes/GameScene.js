@@ -32,9 +32,9 @@ export class GameScene extends Phaser.Scene {
     
     this.comboCount = 0;
     this.multiplier = 1;
-    // Na:
+
     this.sessionMistakes = 0;
-    this.sessionMistakesMap = {}; // Słownik: { 'A': 2, 'B': 1 }
+    this.sessionMistakesMap = {}; // Słownik pomyłek: { 'A': 2, 'B': 1 }
     
     this.gameMode = data && data.mode ? data.mode : 'campaign';
     this.selectedTrainingLevel = data && data.level ? data.level : 5;
@@ -116,7 +116,7 @@ export class GameScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '24px', fill: '#00ff00'
     });
     
-    // --- NOWE ZMIENNE UI ---
+    // --- ZMIENNE UI DLA CZASU I CELNOŚCI ---
     this.timeText = this.add.text(20, 55, `TIME: 0:00`, {
       fontFamily: 'monospace', fontSize: '20px', fill: '#00aa00'
     });
@@ -124,13 +124,15 @@ export class GameScene extends Phaser.Scene {
     this.accuracyText = this.add.text(width - 150, 55, `ACCURACY: 100%`, {
       fontFamily: 'monospace', fontSize: '20px', fill: '#00aa00'
     });
-    // -----------------------
 
+    // --- ETYKIETA TRYBU ---
     let modeLabel = `KOCH LEVEL: ${this.ai.level}`;
     if (this.gameMode === 'training_numbers') {
       modeLabel = 'NUMBERS & PROSIGNS';
     } else if (this.gameMode === 'training_koch') {
       modeLabel = `TRAINING: LVL ${this.selectedTrainingLevel}`;
+    } else if (this.gameMode === 'training_words') {
+      modeLabel = 'SLANG & Q-CODES'; 
     }
 
     this.levelText = this.add.text(width / 2, 20, modeLabel, {
@@ -145,9 +147,12 @@ export class GameScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '16px', fill: '#00aa00'
     });
 
+    // --- ETYKIETA AKTYWNYCH ZNAKÓW ---
     let displayChars = '';
     if (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch') {
       displayChars = this.customTargetSequence.join(' ');
+    } else if (this.gameMode === 'training_words') {
+      displayChars = 'WORDS ONLY';
     } else {
       displayChars = KOCH_SEQUENCE.slice(0, this.ai.level).join(' ');
     }
@@ -195,9 +200,6 @@ export class GameScene extends Phaser.Scene {
 
   // --- NOWY LEJEK DLA DŹWIĘKÓW (ZAPOBIEGA NAKŁADANIU) ---
   requestAudioPlay() {
-    // UWAGA: Usunięto z tego miejsca wczesne porzucanie żądania (if isPlayingAudio return),
-    // ponieważ zablokowane żądanie w fazie Bossa nigdy by nie wróciło.
-    
     if (this.isPaused || this.activeEnemies.length === 0) return;
     
     if (this.audioDebounceTimer) {
@@ -205,19 +207,18 @@ export class GameScene extends Phaser.Scene {
     }
     
     this.audioDebounceTimer = this.time.delayedCall(50, () => {
-      // Jeśli inne audio nadal gra (np. trwa blokada 200ms po wcześniejszym trafieniu),
-      // nie porzucamy żądania w niepamięć, tylko zlecamy ponowne sprawdzenie.
+      // Jeśli inne audio nadal gra, nie porzucamy żądania, tylko ponawiamy
       if (this.isPlayingAudio) {
         this.requestAudioPlay();
         return;
       }
       
-      // Jeśli kanał jest wolny, puszczamy kod Morse'a
       if (!this.isPaused && this.activeEnemies.length > 0) {
         this.playOldestEnemyCode();
       }
     });
   }
+
   playExplosionSound() {
     if (!this.sfxCtx) return;
     if (this.sfxCtx.state === 'suspended') this.sfxCtx.resume();
@@ -268,16 +269,13 @@ export class GameScene extends Phaser.Scene {
       const minutes = Math.floor(activeSessionMs / 60000);
       const seconds = Math.floor((activeSessionMs % 60000) / 1000);
 
-      // Obliczanie procentu poprawnych odpowiedzi
       const totalAttempts = this.sessionStats.totalHits + this.sessionMistakes;
       const accuracy = totalAttempts > 0 ? Math.round((this.sessionStats.totalHits / totalAttempts) * 100) : 0;
 
-      // NOWE: Obliczanie średniego czasu reakcji
       const avgReaction = this.sessionStats.totalHits > 0 
         ? Math.round(this.sessionStats.totalReactionTime / this.sessionStats.totalHits) 
         : 0;
 
-      // Zaktualizowany tekst pauzy
       this.pauseStatsText.setText(
         `SCORE        : ${this.score}\n` +
         `SESSION TIME : ${minutes}m ${seconds}s\n` +
@@ -313,7 +311,7 @@ export class GameScene extends Phaser.Scene {
     if (entries.length === 0) return 'NONE';
 
     return entries
-      .sort((a, b) => b[1] - a[1]) // Sortujemy od największej liczby błędów
+      .sort((a, b) => b[1] - a[1])
       .slice(0, limit)
       .map(([char, count]) => `${char} (${count}x)`)
       .join(', ');
@@ -349,7 +347,7 @@ export class GameScene extends Phaser.Scene {
   update() {
     if (this.isPaused) return;
 
-  // --- AKTUALIZACJA CZASU I CELNOŚCI NA ŻYWO ---
+    // --- AKTUALIZACJA CZASU I CELNOŚCI NA ŻYWO ---
     const activeSessionMs = Date.now() - this.sessionStartTime - this.totalPauseTime;
     const minutes = Math.floor(activeSessionMs / 60000);
     const seconds = Math.floor((activeSessionMs % 60000) / 1000);
@@ -377,7 +375,12 @@ export class GameScene extends Phaser.Scene {
           if (enemy.bossTextObj) enemy.bossTextObj.destroy();
           enemy.destroy();
           this.activeEnemies.splice(i, 1);
-          this.endBossPhase();
+          
+          if (this.gameMode === 'training_words') {
+             this.takeDamage(); 
+          } else {
+             this.endBossPhase();
+          }
         } else {
           this.takeDamage();
           enemy.destroy();
@@ -408,7 +411,7 @@ export class GameScene extends Phaser.Scene {
   scheduleNextSpawn() {
     if (this.bossPhase || this.isBossActive) return;
 
-    const currentDelay = 2000; 
+    const currentDelay = this.gameMode === 'training_words' ? 4000 : 2000; 
     this.spawnTimer = this.time.delayedCall(currentDelay, () => {
       this.spawnEnemy();
       this.scheduleNextSpawn(); 
@@ -420,6 +423,35 @@ export class GameScene extends Phaser.Scene {
   }
 
   async spawnEnemy() {
+    // --- NATYCHMIASTOWE TWORZENIE SŁOWA JAKO STATKU W NOWYM TRYBIE ---
+    if (this.gameMode === 'training_words') {
+      const word = Phaser.Math.RND.pick(this.bossWords);
+      const xPos = Phaser.Math.Between(150, this.cameras.main.width - 150);
+      
+      const boss = new EnemyShip(this, xPos, -80, word);
+      boss.isBoss = true;
+      boss.fullWord = word;
+      boss.remainingWord = word;
+      boss.spawnTime = Date.now();
+      boss.setScale(1.2);
+      
+      this.enemyGroup.add(boss);
+      const fixedSpeed = Number(this.playerProfile.settings.baseGameSpeed) || 100;
+      boss.body.setVelocityY(fixedSpeed * 0.5); 
+      
+      this.activeEnemies.push(boss);
+      
+      const dots = '.'.repeat(word.length);
+      boss.bossTextObj = this.add.text(xPos, -125, dots, {
+        fontFamily: 'monospace', fontSize: '28px', fill: '#ff00ff', fontStyle: 'bold', padding: {x: 5, y: 5}
+      }).setOrigin(0.5, 0.5);
+      boss.bossTextObj.setDepth(50);
+
+      this.requestAudioPlay();
+      return; 
+    }
+    // ------------------------------------------------------------------
+
     let targetChar;
 
     if (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch') {
@@ -438,11 +470,9 @@ export class GameScene extends Phaser.Scene {
     enemy.body.setVelocityY(fixedSpeed); 
     this.activeEnemies.push(enemy);
 
-    // Zamiast bezwarunkowo grać kod, wysyłamy zapytanie do bufora (który przepuści to dalej tylko jeśli nic nie gra)
     this.requestAudioPlay();
   }
 
-  // --- LOGIKA BOSSA ---
   showBossWarningBanner() {
     const { width, height } = this.cameras.main;
     const banner = this.add.text(width / 2, height / 2, "⚠ UNKNOWN SIGNAL DETECTED ⚠", {
@@ -496,18 +526,15 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-async playOldestEnemyCode() {
+  async playOldestEnemyCode() {
     if (this.activeEnemies.length === 0 || this.isPaused) return;
     if (this.isPlayingAudio) return; 
     
     const target = this.activeEnemies[0];
     
-    // --- NOWY WARUNEK ZAPOBIEGAJĄCY PODWÓJNEMU ODTWARZANIU ---
-    // Jeśli statek już raz się odezwał (i nie jest Bossem), ignorujemy żądanie.
     if (target.hasPlayedAudio && !target.isBoss) {
       return;
     }
-    // Zaznaczamy, że ten statek właśnie został obsłużony
     target.hasPlayedAudio = true;
     
     this.isPlayingAudio = true;
@@ -524,19 +551,15 @@ async playOldestEnemyCode() {
       } else {
         await this.cwEngine.playCharacter(target.targetCharacter);
         
-        // Zapisujemy dokładny moment zakończenia nadawania litery (do wyliczania czasu reakcji)
         target.audioEndTime = Date.now();
       }
     } catch (e) {
       console.error(e);
     } finally {
-      // Miękka blokada – trzymamy zamek jeszcze przez ułamek sekundy po zakończeniu, 
-      // żeby absolutnie wykluczyć szybkie API z nakładaniem się obwiedni w Web Audio API.
       this.time.delayedCall(200, () => {
          this.isPlayingAudio = false;
       });
 
-      // PĘTLA DŹWIĘKOWA BOSSA CO 3 SEKUNDY
       if (target.isBoss && this.activeEnemies.includes(target)) {
         if (target.bossAudioTimer) target.bossAudioTimer.remove();
         
@@ -552,13 +575,11 @@ async playOldestEnemyCode() {
   handleInput(event) {
     if (this.isPaused) return;
 
-    // Blokada anti-spam dla klawiatury fizycznej (przytrzymanie klawisza)
     if (event && event.repeat) return;
 
     const key = (event.key || '').toUpperCase();
     if (!/^[A-Z0-9.\/,?]$/.test(key)) return;
 
-    // Blokada przed duplikowaniem inputów (np. klawiatura fizyczna uderza razem ze skryptem mobile)
     const now = Date.now();
     if (this.lastInputTime && (now - this.lastInputTime < 60) && this.lastInputKey === key) {
       return; 
@@ -570,36 +591,51 @@ async playOldestEnemyCode() {
 
     const firstEnemy = this.activeEnemies[0];
 
-    // --- LOGIKA BOSSA ---
+    // --- LOGIKA BOSSA / SŁÓW ---
     if (firstEnemy.isBoss) {
       const expectedChar = firstEnemy.remainingWord[0];
       
       if (key === expectedChar) {
         firstEnemy.remainingWord = firstEnemy.remainingWord.substring(1);
-        
         firstEnemy.bossTextObj.setText('.'.repeat(firstEnemy.remainingWord.length));
         ParticleFX.createExplosion(this, firstEnemy.x, firstEnemy.y);
 
+        if (this.gameMode === 'training_words') {
+           this.sessionStats.totalHits += 1;
+           this.updateCombo(true);
+           this.score += 100 * this.multiplier;
+           this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
+        }
+
         if (firstEnemy.remainingWord.length === 0) {
           if (firstEnemy.bossAudioTimer) firstEnemy.bossAudioTimer.remove();
-          
           this.playExplosionSound();
-          this.score += 10000;
           
-          this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
+          if (this.gameMode !== 'training_words') {
+             this.score += 10000;
+             this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
+          }
+          
           ParticleFX.createExplosion(this, firstEnemy.x, firstEnemy.y);
-          
           if (firstEnemy.bossTextObj) firstEnemy.bossTextObj.destroy();
           if (typeof firstEnemy.destroyShip === 'function') firstEnemy.destroyShip();
           else firstEnemy.destroy();
           
           this.activeEnemies.shift();
-          this.endBossPhase();
+          
+          if (this.gameMode !== 'training_words') {
+             this.endBossPhase();
+          }
           
           if (this.activeEnemies.length > 0) this.requestAudioPlay();
         }
       } else {
         this.cameras.main.shake(100, 0.005);
+        if (this.gameMode === 'training_words') {
+           this.sessionStats.totalErrors += 1;
+           this.updateCombo(false);
+           this.sessionMistakesMap[expectedChar] = (this.sessionMistakesMap[expectedChar] || 0) + 1;
+        }
       }
       return; 
     }
@@ -608,7 +644,6 @@ async playOldestEnemyCode() {
     let hitIndex = -1;
     let lowestY = -Infinity;
     
-    // Szukamy pasującej litery – priorytet ma statek znajdujący się najniżej na ekranie
     for (let i = 0; i < this.activeEnemies.length; i++) {
       if (this.activeEnemies[i].targetCharacter === key) {
         if (this.activeEnemies[i].y > lowestY) {
@@ -619,20 +654,15 @@ async playOldestEnemyCode() {
     }
 
     if (hitIndex !== -1) {
-      // Trafienie prawidlowe - mnożnik rośnie
       const targetEnemy = this.activeEnemies[hitIndex];
       
-      // Na to:
       let reactionTime = 0;
       if (targetEnemy.audioEndTime) {
-          // Dźwięk się zakończył - liczymy czas od tego momentu
           reactionTime = Date.now() - targetEnemy.audioEndTime;
       } else {
-          // Ktoś był tak szybki (albo strzelał w ciemno), że trafił ZANIM dźwięk przestał grać.
-          // Wtedy dla zachowania logiki możemy przyjąć bardzo szybki czas bazujący na spawnie, albo np. uznać to za 0.
           reactionTime = Date.now() - targetEnemy.spawnTime; 
       }
-      this.sessionStats.totalReactionTime += Math.max(0, reactionTime); // Zabezpieczenie przed wartościami ujemnymi
+      this.sessionStats.totalReactionTime += Math.max(0, reactionTime); 
 
       this.updateCombo(true); 
       this.playExplosionSound(); 
@@ -651,7 +681,7 @@ async playOldestEnemyCode() {
       this.scoreText.setText(`SCORE: ${this.score.toString().padStart(4, '0')}`);
       ParticleFX.createExplosion(this, targetEnemy.x, targetEnemy.y);
       
-      const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
+      const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch' || this.gameMode === 'training_words');
       
       if (!isTraining) {
         const oldLevel = this.ai.level;
@@ -671,25 +701,21 @@ async playOldestEnemyCode() {
       
       this.activeEnemies.splice(hitIndex, 1);
 
-      // Jeżeli zestrzeliliśmy "najstarszego", to żądamy puszczenia dźwięku dla nowego najstarszego
       if (hitIndex === 0 && this.activeEnemies.length > 0) {
         this.requestAudioPlay();
       }
     } else {
-      // BŁĄD PUDŁO: Wciśnięto przycisk, którego nie ma aktualnie na planszy
       const reactionTime = Date.now() - firstEnemy.spawnTime;
       this.cameras.main.shake(100, 0.005);
       this.sessionStats.totalErrors += 1;
-      this.updateCombo(false); // Zerowanie mnożnika
+      this.updateCombo(false); 
 
-    // --- NOWA LINIJKA: Zliczamy konkretną pomyloną literę ---
       const expectedChar = firstEnemy.targetCharacter;
       if (expectedChar) {
         this.sessionMistakesMap[expectedChar] = (this.sessionMistakesMap[expectedChar] || 0) + 1;
       }
-      // --------------------------------------------------------
 
-      const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
+      const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch' || this.gameMode === 'training_words');
       if (!isTraining) {
         this.ai.recordAttempt(firstEnemy.targetCharacter, reactionTime, false);
       }
@@ -766,7 +792,7 @@ async playOldestEnemyCode() {
   }
 
   saveProgress() {
-    const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
+    const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch' || this.gameMode === 'training_words');
     if (!isTraining) {
       this.playerProfile.kochLevel = this.ai.level;
       this.playerProfile.stats = this.ai.exportState().stats;
@@ -786,7 +812,7 @@ async playOldestEnemyCode() {
   }
 
   updateLevelHUD() {
-    const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch');
+    const isTraining = (this.gameMode === 'training_numbers' || this.gameMode === 'training_koch' || this.gameMode === 'training_words');
     if (!isTraining && this.levelText.text !== `KOCH LEVEL: ${this.ai.level}`) {
       this.levelText.setText(`KOCH LEVEL: ${this.ai.level}`);
       const currentChars = KOCH_SEQUENCE.slice(0, this.ai.level).join(' ');
@@ -835,7 +861,7 @@ async playOldestEnemyCode() {
     this.scene.start(SCENES.MENU);
   }
 
-showSummaryScreen(titleText) {
+  showSummaryScreen(titleText) {
     globalEventBus.off('ACHIEVEMENT_UNLOCKED', this.showAchievementNotification, this);
     this.saveProgress();
     this.physics.pause();
@@ -854,24 +880,21 @@ showSummaryScreen(titleText) {
     const minutes = Math.floor(activeSessionMs / 60000);
     const seconds = Math.floor((activeSessionMs % 60000) / 1000);
     
-    // Obliczanie procentu poprawnych odpowiedzi
     const totalAttempts = this.sessionStats.totalHits + this.sessionMistakes;
     const accuracy = totalAttempts > 0 ? Math.round((this.sessionStats.totalHits / totalAttempts) * 100) : 0;
 
-// Obliczanie średniego czasu reakcji
     const avgReaction = this.sessionStats.totalHits > 0 
       ? Math.round(this.sessionStats.totalReactionTime / this.sessionStats.totalHits) 
       : 0;
 
-    // Zaktualizowany tekst statystyk
     const statsText = 
-      `SCORE      : ${this.score}\n` +
-      `SESSION TIME: ${minutes}m ${seconds}s\n` +
+      `SCORE        : ${this.score}\n` +
+      `SESSION TIME : ${minutes}m ${seconds}s\n` +
       `AVG REACTION : ${avgReaction} ms\n` +
-      `HITS        : ${this.sessionStats.totalHits}\n` +
-      `ERRORS      : ${this.sessionMistakes}\n` +
-      `MOST MISSED : ${this.getTopMistakesText()}\n` +
-      `ACCURACY    : ${accuracy}%`;
+      `HITS         : ${this.sessionStats.totalHits}\n` +
+      `ERRORS       : ${this.sessionMistakes}\n` +
+      `MOST MISSED  : ${this.getTopMistakesText()}\n` +
+      `ACCURACY     : ${accuracy}%`;
 
     this.add.text(width / 2, height / 2, statsText, {
       fontFamily: 'monospace', fontSize: '24px', fill: '#00ff00', align: 'left', lineSpacing: 10

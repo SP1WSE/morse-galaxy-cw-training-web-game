@@ -52,7 +52,8 @@ export class MenuScene extends Phaser.Scene {
     this.mainMenuGroup.add(settingsBtn);
 
     // --- PODMENU TRENINGU ---
-    const trainingTitle = this.add.text(width / 2, height * 0.40, 'SELECT TRAINING TYPE', {
+    // Lekko przesunięte w górę, żeby zrobić miejsce na nowy tryb
+    const trainingTitle = this.add.text(width / 2, height * 0.35, 'SELECT TRAINING TYPE', {
       fontFamily: 'monospace', fontSize: '24px', fill: '#00ffff'
     }).setOrigin(0.5, 0.5);
     this.trainingMenuGroup.add(trainingTitle);
@@ -60,18 +61,18 @@ export class MenuScene extends Phaser.Scene {
     this.trainingLevel = 5; 
     const maxKochLevel = KOCH_SEQUENCE.length;
 
-    this.trainingLevelText = this.add.text(width / 2, height * 0.50, `KOCH LEVEL: ${this.trainingLevel}`, {
+    this.trainingLevelText = this.add.text(width / 2, height * 0.45, `KOCH LEVEL: ${this.trainingLevel}`, {
       fontFamily: 'monospace', fontSize: '20px', fill: '#00ff00'
     }).setOrigin(0.5, 0.5);
 
-    const minusKochBtn = this.createButton(width / 2 - 120, height * 0.50, ' [ - ] ', () => {
+    const minusKochBtn = this.createButton(width / 2 - 120, height * 0.45, ' [ - ] ', () => {
       if (this.trainingLevel > 2) {
         this.trainingLevel--;
         this.trainingLevelText.setText(`KOCH LEVEL: ${this.trainingLevel}`);
       }
     });
 
-    const plusKochBtn = this.createButton(width / 2 + 120, height * 0.50, ' [ + ] ', () => {
+    const plusKochBtn = this.createButton(width / 2 + 120, height * 0.45, ' [ + ] ', () => {
       if (this.trainingLevel < maxKochLevel) {
         this.trainingLevel++;
         this.trainingLevelText.setText(`KOCH LEVEL: ${this.trainingLevel}`);
@@ -80,17 +81,23 @@ export class MenuScene extends Phaser.Scene {
 
     this.trainingMenuGroup.add([this.trainingLevelText, minusKochBtn, plusKochBtn]);
 
-    const startKochTrainingBtn = this.createButton(width / 2, height * 0.60, '[ START KOCH TRAINING ]', () => {
+    const startKochTrainingBtn = this.createButton(width / 2, height * 0.55, '[ START KOCH TRAINING ]', () => {
       this.scene.start(SCENES.GAME, { mode: 'training_koch', level: this.trainingLevel });
     });
     this.trainingMenuGroup.add(startKochTrainingBtn);
 
-    const startNumbersBtn = this.createButton(width / 2, height * 0.70, '[ START NUMBERS & PROSIGNS ]', () => {
+    const startNumbersBtn = this.createButton(width / 2, height * 0.65, '[ START NUMBERS & PROSIGNS ]', () => {
       this.scene.start(SCENES.GAME, { mode: 'training_numbers' });
     });
     this.trainingMenuGroup.add(startNumbersBtn);
 
-    const backToMainBtn = this.createButton(width / 2, height * 0.82, '[ << BACK TO MAIN MENU ]', () => {
+    // NOWE: Przycisk trybu SLANG & Q-CODES
+    const startWordsBtn = this.createButton(width / 2, height * 0.75, '[ START SLANG & Q-CODES ]', () => {
+      this.scene.start(SCENES.GAME, { mode: 'training_words' });
+    });
+    this.trainingMenuGroup.add(startWordsBtn);
+
+    const backToMainBtn = this.createButton(width / 2, height * 0.85, '[ << BACK TO MAIN MENU ]', () => {
       this.trainingMenuGroup.setVisible(false);
       this.mainMenuGroup.setVisible(true);
     });
