@@ -76,7 +76,7 @@ export class GameScene extends Phaser.Scene {
     this.achievements = new AchievementManager(this.playerProfile);
     
     if (this.gameMode === 'training_numbers') {
-      this.customTargetSequence = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', ',', '?', '/'];
+      this.customTargetSequence = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '=', '?', '/'];
     } else if (this.gameMode === 'training_koch') {
       const clampedLevel = Phaser.Math.Clamp(this.selectedTrainingLevel, 2, KOCH_SEQUENCE.length);
       this.customTargetSequence = KOCH_SEQUENCE.slice(0, clampedLevel);
@@ -578,7 +578,8 @@ export class GameScene extends Phaser.Scene {
     if (event && event.repeat) return;
 
     const key = (event.key || '').toUpperCase();
-    if (!/^[A-Z0-9.\/,?]$/.test(key)) return;
+    // Zmień na (dodany znak = na końcu przed nawiasem]):
+    if (!/^[A-Z0-9.\/,?=]$/.test(key)) return;
 
     const now = Date.now();
     if (this.lastInputTime && (now - this.lastInputTime < 60) && this.lastInputKey === key) {
