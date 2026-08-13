@@ -23,6 +23,9 @@ export class SettingsScene extends Phaser.Scene {
     this.charWpmVal = this.profile.settings.characterWPM || 20;
     this.overallWpmVal = this.profile.settings.overallWPM || 10;
     this.freqVal = this.profile.settings.frequency || 600;
+    
+    // NOWE: Pobranie wartości Bossa (domyślnie 2)
+    this.bossLevelVal = this.profile.bossLevel || 2; 
 
     let startY = 130;
     const spacing = 55;
@@ -53,6 +56,13 @@ export class SettingsScene extends Phaser.Scene {
       this.freqVal = Phaser.Math.Clamp(this.freqVal + step, 400, 1000);
       return this.freqVal;
     }, 50);
+
+    // 5. NOWE: Maksymalna długość Bossa / Słów (krok co 1, max 8)
+    startY += spacing;
+    this.createSettingRow(width, startY, 'BOSS MAX LENGTH (CHARS):', () => this.bossLevelVal, (step) => {
+      this.bossLevelVal = Phaser.Math.Clamp(this.bossLevelVal + step, 2, 8);
+      return this.bossLevelVal;
+    }, 1);
 
     // Test dźwięku
     startY += spacing + 10;
@@ -86,6 +96,9 @@ export class SettingsScene extends Phaser.Scene {
       this.profile.settings.characterWPM = this.charWpmVal;
       this.profile.settings.overallWPM = this.overallWpmVal;
       this.profile.settings.frequency = this.freqVal;
+      
+      // Zapisujemy długość bossa do głównego profilu (nie w settings)
+      this.profile.bossLevel = this.bossLevelVal;
 
       SaveManager.save(this.profile);
       this.scene.start(SCENES.MENU);
@@ -109,7 +122,6 @@ export class SettingsScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '20px', fill: '#00aa00'
     }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
 
-    // Określamy krok zmiany dla konkretnego wiersza
     let step = 1;
     if (label.includes('SPEED')) step = 10;
     if (label.includes('FREQUENCY')) step = 50;

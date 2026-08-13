@@ -47,7 +47,9 @@ export class GameScene extends Phaser.Scene {
     this.pauseStartTime = 0;
 
     // --- ZMIENNE BOSSA ---
+// --- ZMIENNE BOSSA ---
     this.bossWords = [
+      // Skróty, Q-kody, imiona itp.
       'QRT','QSB','QTH','QRQ','QRS','QRL','QRP','QSY','QRM','QRN',
       'QRO','QRV','QRX','QRZ','DE','KN','RR','RRR','TNX','TU',
       'FB','GA','GM','GE','CU','FER','HW?','OP','73','88','44',
@@ -59,7 +61,24 @@ export class GameScene extends Phaser.Scene {
       'REF','ACT','HUNTER','SPOT','LOG','WWFF','SPFF','579','589',
       '559','123','SN','SQ','DL','OK','OM','OE','SM','LA',
       'OH','PA','CT','LZ','M0ABC','EA5AAA','F4XYZ','N7DR','SP1WSE',
-      'HR','NW','ABT','B4','XCVR','SIGS'     
+      'HR','NW','ABT','B4','XCVR','SIGS',
+
+      // Nowe znaki wywoławcze (Callsigns)
+      'SP1KDX', 'SP2WQF', 'SP3LZN', 'SP4HRT', 'SP5JNX', 'SP6VKC', 'SP7RQM', 'SP8GWF', 'SP9YDL',
+      'SQ1ZKT', 'SQ2NVR', 'SQ3WJP', 'SQ4XLG', 'SQ5KFH', 'SQ6MZR', 'SQ7QNV', 'SQ8LWX', 'SQ9RGP',
+      'SN1VQK', 'SN2JZR', 'SN3WLF', 'SN4KXP', 'SN5GQR', 'SN6ZMW', 'SN7RKV', 'SN8HJD', 'SN9XQP',
+      'HF1NZW', 'HF2KVG', 'HF3QRL', 'HF4JXP', 'HF5WKM', 'HF6ZTR', 'HF7GQN', 'HF8VLP', 'HF9XKD',
+      'DL1QWZ', 'DL2KFV', 'DL3XRN', 'DL4ZQP', 'DL5WJG', 'DL6HXM', 'DL7VKR', 'DL8QNF', 'DL9ZLW',
+      'DB1XQK', 'DC2VRM', 'DD5KZX', 'DF7WQN', 'DG9JLF', 'DK4XPR', 'DJ6ZKV', 'DO1QXM',
+      'OK1WZP', 'OK2QVN', 'OK3XLF', 'OK5KZR', 'OK7VQM', 'OL1JXP', 'OL2WKN',
+      'OM1ZQF', 'OM2KXV', 'OM3RWL', 'OM5QJP',
+      'OE1XZR', 'OE2KQW', 'OE3VNF', 'OE5JRX', 'OE7ZKM',
+      'HB9QXF', 'HB9WKR', 'HB9ZJP', 'HB9KVM',
+      'ON4XQJ', 'ON5ZWR', 'ON6KFP', 'ON7VQX', 'ON8JZM',
+      'F4QXZ', 'F5KWR', 'F6ZJP', 'F8XQM', 'F9VKL',
+      'M0QXZ', 'M1KVR', 'M3ZWF', 'M5XQJ', 'M7RKP',
+      '2E0ZQX', '2E1KWR', 'EA1QXZ', 'EA2KVM', 'EA5ZJP', 'EA7XQW',
+      'IK1QZR', 'IK2VXF', 'SM5ZQK', 'LA7XVR', 'OH3QZM', 'OZ5KXF', 'PA3ZQW'
     ];
     this.bossProgress = 0; 
     this.bossThreshold = 5000; 
@@ -75,6 +94,16 @@ export class GameScene extends Phaser.Scene {
     this.ai = new AdaptiveLearner(this.playerProfile);
     this.achievements = new AchievementManager(this.playerProfile);
     
+    // --- DODAJ TO ZARAZ POD NIM: ---
+    const maxBossLen = this.playerProfile.bossLevel || 2; // Odczytujemy ustawienie (domyślnie 2)
+    this.filteredBossWords = this.bossWords.filter(word => word.length <= maxBossLen);
+
+    // Zabezpieczenie na wypadek błędu (gdyby lista była pusta)
+    if (this.filteredBossWords.length === 0) {
+      this.filteredBossWords = ['CQ', 'DE', 'TU', '73']; 
+    }
+    // -------------------------------
+
     if (this.gameMode === 'training_numbers') {
       this.customTargetSequence = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '=', '?', '/'];
     } else if (this.gameMode === 'training_koch') {
@@ -425,7 +454,7 @@ export class GameScene extends Phaser.Scene {
   async spawnEnemy() {
     // --- NATYCHMIASTOWE TWORZENIE SŁOWA JAKO STATKU W NOWYM TRYBIE ---
     if (this.gameMode === 'training_words') {
-      const word = Phaser.Math.RND.pick(this.bossWords);
+      const word = Phaser.Math.RND.pick(this.filteredBossWords);
       const xPos = Phaser.Math.Between(150, this.cameras.main.width - 150);
       
       const boss = new EnemyShip(this, xPos, -80, word);
@@ -490,7 +519,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   spawnBoss() {
-    const word = Phaser.Math.RND.pick(this.bossWords);
+    const word = Phaser.Math.RND.pick(this.filteredBossWords);
     const xPos = Phaser.Math.Between(150, this.cameras.main.width - 150);
     
     const boss = new EnemyShip(this, xPos, -80, word);
