@@ -555,21 +555,32 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  async playOldestEnemyCode() {
+async playOldestEnemyCode() {
     if (this.activeEnemies.length === 0 || this.isPaused) return;
     if (this.isPlayingAudio) return; 
     
     const target = this.activeEnemies[0];
     
-    if (target.hasPlayedAudio && !target.isBoss) {
+    // Zwykłe statki (pojedyncze litery) grają tylko raz.
+    if (!target.isBoss && target.hasPlayedAudio) {
       return;
     }
-    target.hasPlayedAudio = true;
     
+    // Bossy i słowa: jeśli aktualnie czekają w 3-sekundowej pętli na swoją kolej,
+    // ignorujemy to wywołanie (zapobiega to zacinaniu, gdy spawnuje się nowy statek).
+    if (target.isBoss && target.isWaitingForLoop) {
+      return;
+    }
+
+    // Zaznaczamy, że statek właśnie został obsłużony
+    target.hasPlayedAudio = true;
     this.isPlayingAudio = true;
     
     try {
       if (target.isBoss) {
+        // Uruchamiamy blokadę przed zewnętrznymi wywołaniami
+        target.isWaitingForLoop = true; 
+        
         for (let i = 0; i < target.fullWord.length; i++) {
           if (this.isPaused || !this.activeEnemies.includes(target)) break; 
           await this.cwEngine.playCharacter(target.fullWord[i]);
@@ -579,7 +590,6 @@ export class GameScene extends Phaser.Scene {
         }
       } else {
         await this.cwEngine.playCharacter(target.targetCharacter);
-        
         target.audioEndTime = Date.now();
       }
     } catch (e) {
@@ -589,10 +599,13 @@ export class GameScene extends Phaser.Scene {
          this.isPlayingAudio = false;
       });
 
+      // Przywrócona pętla 3-sekundowa dla WSZYSTKICH bossów (kampania i trening)
       if (target.isBoss && this.activeEnemies.includes(target)) {
         if (target.bossAudioTimer) target.bossAudioTimer.remove();
         
-        target.bossAudioTimer = this.time.delayedCall(3000, () => {
+        target.bossAudioTimer = this.time.delayedCall(1500, () => {
+          // Zdejmujemy blokadę tuż przed ponownym odtworzeniem
+          target.isWaitingForLoop = false;
           if (this.activeEnemies.includes(target) && !this.isPaused) {
              this.playOldestEnemyCode();
           }
@@ -627,7 +640,10 @@ export class GameScene extends Phaser.Scene {
       
       if (key === expectedChar) {
         firstEnemy.remainingWord = firstEnemy.remainingWord.substring(1);
-        firstEnemy.bossTextObj.setText('.'.repeat(firstEnemy.remainingWord.length));
+        // wyswietlanie poprawnych liter nad bossami:
+        const typedPart = firstEnemy.fullWord.substring(0, firstEnemy.fullWord.length - firstEnemy.remainingWord.length);
+        firstEnemy.bossTextObj.setText(typedPart + '.'.repeat(firstEnemy.remainingWord.length));
+        // ----------------------------------------------------------------------------------
         ParticleFX.createExplosion(this, firstEnemy.x, firstEnemy.y);
 
         if (this.gameMode === 'training_words') {
