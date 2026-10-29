@@ -1,19 +1,12 @@
-# Morse Galaxy - CW Koch Method Trainer v1.0
+Morse Galaxy is an educational arcade game based on the **Koch method** for learning to copy Morse code by ear. The player destroys descending spaceships by correctly identifying and typing the transmitted characters.
 
-## O grze
-Morse Galaxy to gra zręcznościowo-edukacyjna oparta na **metodze Kocha** do nauki odbioru kodu Morse'a ze słuchu. Gracz niszczy opadające statki kosmiczne poprzez poprawne rozpoznawanie i wpisywanie nadawanych znaków.
+## Key Features
 
-## Główne Funkcje
-1. **Kampania adaptacyjna:** Automatyczne zwiększanie poziomu trudności i wprowadzanie nowych liter według sekwencji Kocha na podstawie postępów gracza.
-2. **Tryb Treningu:** Pozwala na ćwiczenie konkretnych poziomów Kocha lub sekwencji cyfr bez modyfikowania profilu kampanii.
-3. **Pełna personalizacja (System Settings):**
-   - Prędkość statków (Base Game Speed)
-   - Prędkość znaków (Character WPM)
-   - Prędkość ogólna (Overall WPM)
-   - Częstotliwość tonu (Tone Frequency w Hz) z opcjoną odsłuchu testowego.
-4. **Kompatybilność mobilna:** Pełna obsługa ekranów dotykowych i klawiatur ekranowych na smartfonach.
-
-## Architektura techniczna
-- **Silnik:** Phaser 3
-- **Audio:** Web Audio API (własny `CWEngine`)
-- **Przechowywanie danych:** `localStorage` przez `SaveManager`
+1. **Adaptive Campaign:** Automatically increases difficulty and introduces new letters according to the Koch sequence, based on the player's progress.
+2. **Training Mode:** Allows players to practice specific Koch levels or number sequences without modifying their campaign profile.
+3. **Full Customization (System Settings):**
+   - Ship Speed (Base Game Speed)
+   - Character Speed (Character WPM)
+   - Overall Speed (Overall WPM)
+   - Tone Frequency (in Hz), with an option to preview the tone.
+4. **Mobile Compatibility:** Full support for touchscreens and on-screen keyboards on smartphones.
