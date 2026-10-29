@@ -10,3 +10,5 @@ Morse Galaxy is an educational arcade game based on the **Koch method** for lear
    - Overall Speed (Overall WPM)
    - Tone Frequency (in Hz), with an option to preview the tone.
 4. **Mobile Compatibility:** Full support for touchscreens and on-screen keyboards on smartphones.
+
+5. online published online: https://polecam.org/cwgame/
